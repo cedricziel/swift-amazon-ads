@@ -407,4 +407,755 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             return result
         }
     }
+
+    // MARK: - Campaign Management
+
+    public func listCampaigns(
+        profileId: String,
+        region: AmazonRegion,
+        stateFilter: [CampaignState]?
+    ) async throws -> [SponsoredProductsCampaign] {
+        let accessToken = try await getAccessToken(for: region)
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/campaigns")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
+        request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        // Add state filter as query parameter if provided
+        if let stateFilter = stateFilter, !stateFilter.isEmpty {
+            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+            components.queryItems = [
+                URLQueryItem(name: "stateFilter", value: stateFilter.map(\.rawValue).joined(separator: ","))
+            ]
+            request.url = components.url
+        }
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AmazonAdvertisingError.invalidResponse
+        }
+
+        if httpResponse.statusCode == 200 {
+            let decoder = JSONDecoder()
+            return try decoder.decode([SponsoredProductsCampaign].self, from: data)
+        } else {
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+        }
+    }
+
+    public func getCampaign(
+        campaignId: String,
+        profileId: String,
+        region: AmazonRegion
+    ) async throws -> SponsoredProductsCampaign {
+        let accessToken = try await getAccessToken(for: region)
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/campaigns/\(campaignId)")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
+        request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AmazonAdvertisingError.invalidResponse
+        }
+
+        if httpResponse.statusCode == 200 {
+            let decoder = JSONDecoder()
+            return try decoder.decode(SponsoredProductsCampaign.self, from: data)
+        } else {
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+        }
+    }
+
+    public func createCampaign(
+        campaign: SponsoredProductsCampaign,
+        profileId: String,
+        region: AmazonRegion
+    ) async throws -> SponsoredProductsCampaign {
+        let accessToken = try await getAccessToken(for: region)
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/campaigns")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
+        request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let encoder = JSONEncoder()
+        request.httpBody = try encoder.encode(campaign)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AmazonAdvertisingError.invalidResponse
+        }
+
+        if httpResponse.statusCode == 200 || httpResponse.statusCode == 201 {
+            let decoder = JSONDecoder()
+            return try decoder.decode(SponsoredProductsCampaign.self, from: data)
+        } else {
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+        }
+    }
+
+    public func updateCampaign(
+        campaign: SponsoredProductsCampaign,
+        profileId: String,
+        region: AmazonRegion
+    ) async throws -> SponsoredProductsCampaign {
+        guard let campaignId = campaign.campaignId else {
+            throw AmazonAdvertisingError.invalidRequest("Campaign ID is required for update")
+        }
+
+        let accessToken = try await getAccessToken(for: region)
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/campaigns/\(campaignId)")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
+        request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let encoder = JSONEncoder()
+        request.httpBody = try encoder.encode(campaign)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AmazonAdvertisingError.invalidResponse
+        }
+
+        if httpResponse.statusCode == 200 {
+            let decoder = JSONDecoder()
+            return try decoder.decode(SponsoredProductsCampaign.self, from: data)
+        } else {
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+        }
+    }
+
+    public func archiveCampaign(
+        campaignId: String,
+        profileId: String,
+        region: AmazonRegion
+    ) async throws {
+        let accessToken = try await getAccessToken(for: region)
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/campaigns/\(campaignId)")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
+        request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AmazonAdvertisingError.invalidResponse
+        }
+
+        if httpResponse.statusCode != 200 && httpResponse.statusCode != 204 {
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+        }
+    }
+
+    // MARK: - Ad Group Management
+
+    public func listAdGroups(
+        campaignId: String?,
+        profileId: String,
+        region: AmazonRegion,
+        stateFilter: [AdGroupState]?
+    ) async throws -> [SponsoredProductsAdGroup] {
+        let accessToken = try await getAccessToken(for: region)
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/adGroups")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
+        request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        // Add filters as query parameters
+        var queryItems: [URLQueryItem] = []
+        if let campaignId = campaignId {
+            queryItems.append(URLQueryItem(name: "campaignIdFilter", value: campaignId))
+        }
+        if let stateFilter = stateFilter, !stateFilter.isEmpty {
+            queryItems.append(URLQueryItem(name: "stateFilter", value: stateFilter.map(\.rawValue).joined(separator: ",")))
+        }
+
+        if !queryItems.isEmpty {
+            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+            components.queryItems = queryItems
+            request.url = components.url
+        }
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AmazonAdvertisingError.invalidResponse
+        }
+
+        if httpResponse.statusCode == 200 {
+            let decoder = JSONDecoder()
+            return try decoder.decode([SponsoredProductsAdGroup].self, from: data)
+        } else {
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+        }
+    }
+
+    public func getAdGroup(
+        adGroupId: String,
+        profileId: String,
+        region: AmazonRegion
+    ) async throws -> SponsoredProductsAdGroup {
+        let accessToken = try await getAccessToken(for: region)
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/adGroups/\(adGroupId)")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
+        request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AmazonAdvertisingError.invalidResponse
+        }
+
+        if httpResponse.statusCode == 200 {
+            let decoder = JSONDecoder()
+            return try decoder.decode(SponsoredProductsAdGroup.self, from: data)
+        } else {
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+        }
+    }
+
+    public func createAdGroup(
+        adGroup: SponsoredProductsAdGroup,
+        profileId: String,
+        region: AmazonRegion
+    ) async throws -> SponsoredProductsAdGroup {
+        let accessToken = try await getAccessToken(for: region)
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/adGroups")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
+        request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let encoder = JSONEncoder()
+        request.httpBody = try encoder.encode(adGroup)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AmazonAdvertisingError.invalidResponse
+        }
+
+        if httpResponse.statusCode == 200 || httpResponse.statusCode == 201 {
+            let decoder = JSONDecoder()
+            return try decoder.decode(SponsoredProductsAdGroup.self, from: data)
+        } else {
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+        }
+    }
+
+    public func updateAdGroup(
+        adGroup: SponsoredProductsAdGroup,
+        profileId: String,
+        region: AmazonRegion
+    ) async throws -> SponsoredProductsAdGroup {
+        guard let adGroupId = adGroup.adGroupId else {
+            throw AmazonAdvertisingError.invalidRequest("Ad Group ID is required for update")
+        }
+
+        let accessToken = try await getAccessToken(for: region)
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/adGroups/\(adGroupId)")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
+        request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let encoder = JSONEncoder()
+        request.httpBody = try encoder.encode(adGroup)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AmazonAdvertisingError.invalidResponse
+        }
+
+        if httpResponse.statusCode == 200 {
+            let decoder = JSONDecoder()
+            return try decoder.decode(SponsoredProductsAdGroup.self, from: data)
+        } else {
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+        }
+    }
+
+    public func archiveAdGroup(
+        adGroupId: String,
+        profileId: String,
+        region: AmazonRegion
+    ) async throws {
+        let accessToken = try await getAccessToken(for: region)
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/adGroups/\(adGroupId)")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
+        request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AmazonAdvertisingError.invalidResponse
+        }
+
+        if httpResponse.statusCode != 200 && httpResponse.statusCode != 204 {
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+        }
+    }
+
+    // MARK: - Product Ad Management
+
+    public func listProductAds(
+        adGroupId: String?,
+        profileId: String,
+        region: AmazonRegion,
+        stateFilter: [ProductAdState]?
+    ) async throws -> [SponsoredProductsProductAd] {
+        let accessToken = try await getAccessToken(for: region)
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/productAds")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
+        request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        // Add filters as query parameters
+        var queryItems: [URLQueryItem] = []
+        if let adGroupId = adGroupId {
+            queryItems.append(URLQueryItem(name: "adGroupIdFilter", value: adGroupId))
+        }
+        if let stateFilter = stateFilter, !stateFilter.isEmpty {
+            queryItems.append(URLQueryItem(name: "stateFilter", value: stateFilter.map(\.rawValue).joined(separator: ",")))
+        }
+
+        if !queryItems.isEmpty {
+            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+            components.queryItems = queryItems
+            request.url = components.url
+        }
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AmazonAdvertisingError.invalidResponse
+        }
+
+        if httpResponse.statusCode == 200 {
+            let decoder = JSONDecoder()
+            return try decoder.decode([SponsoredProductsProductAd].self, from: data)
+        } else {
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+        }
+    }
+
+    public func createProductAd(
+        productAd: SponsoredProductsProductAd,
+        profileId: String,
+        region: AmazonRegion
+    ) async throws -> SponsoredProductsProductAd {
+        let accessToken = try await getAccessToken(for: region)
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/productAds")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
+        request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let encoder = JSONEncoder()
+        request.httpBody = try encoder.encode(productAd)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AmazonAdvertisingError.invalidResponse
+        }
+
+        if httpResponse.statusCode == 200 || httpResponse.statusCode == 201 {
+            let decoder = JSONDecoder()
+            return try decoder.decode(SponsoredProductsProductAd.self, from: data)
+        } else {
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+        }
+    }
+
+    public func updateProductAd(
+        productAd: SponsoredProductsProductAd,
+        profileId: String,
+        region: AmazonRegion
+    ) async throws -> SponsoredProductsProductAd {
+        guard let adId = productAd.adId else {
+            throw AmazonAdvertisingError.invalidRequest("Product Ad ID is required for update")
+        }
+
+        let accessToken = try await getAccessToken(for: region)
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/productAds/\(adId)")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
+        request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let encoder = JSONEncoder()
+        request.httpBody = try encoder.encode(productAd)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AmazonAdvertisingError.invalidResponse
+        }
+
+        if httpResponse.statusCode == 200 {
+            let decoder = JSONDecoder()
+            return try decoder.decode(SponsoredProductsProductAd.self, from: data)
+        } else {
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+        }
+    }
+
+    public func archiveProductAd(
+        adId: String,
+        profileId: String,
+        region: AmazonRegion
+    ) async throws {
+        let accessToken = try await getAccessToken(for: region)
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/productAds/\(adId)")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
+        request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AmazonAdvertisingError.invalidResponse
+        }
+
+        if httpResponse.statusCode != 200 && httpResponse.statusCode != 204 {
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+        }
+    }
+
+    // MARK: - Keyword Management
+
+    public func listKeywords(
+        adGroupId: String?,
+        profileId: String,
+        region: AmazonRegion,
+        stateFilter: [KeywordState]?
+    ) async throws -> [SponsoredProductsKeyword] {
+        let accessToken = try await getAccessToken(for: region)
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/keywords")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
+        request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        // Add filters as query parameters
+        var queryItems: [URLQueryItem] = []
+        if let adGroupId = adGroupId {
+            queryItems.append(URLQueryItem(name: "adGroupIdFilter", value: adGroupId))
+        }
+        if let stateFilter = stateFilter, !stateFilter.isEmpty {
+            queryItems.append(URLQueryItem(name: "stateFilter", value: stateFilter.map(\.rawValue).joined(separator: ",")))
+        }
+
+        if !queryItems.isEmpty {
+            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+            components.queryItems = queryItems
+            request.url = components.url
+        }
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AmazonAdvertisingError.invalidResponse
+        }
+
+        if httpResponse.statusCode == 200 {
+            let decoder = JSONDecoder()
+            return try decoder.decode([SponsoredProductsKeyword].self, from: data)
+        } else {
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+        }
+    }
+
+    public func createKeyword(
+        keyword: SponsoredProductsKeyword,
+        profileId: String,
+        region: AmazonRegion
+    ) async throws -> SponsoredProductsKeyword {
+        let accessToken = try await getAccessToken(for: region)
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/keywords")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
+        request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let encoder = JSONEncoder()
+        request.httpBody = try encoder.encode(keyword)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AmazonAdvertisingError.invalidResponse
+        }
+
+        if httpResponse.statusCode == 200 || httpResponse.statusCode == 201 {
+            let decoder = JSONDecoder()
+            return try decoder.decode(SponsoredProductsKeyword.self, from: data)
+        } else {
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+        }
+    }
+
+    public func updateKeyword(
+        keyword: SponsoredProductsKeyword,
+        profileId: String,
+        region: AmazonRegion
+    ) async throws -> SponsoredProductsKeyword {
+        guard let keywordId = keyword.keywordId else {
+            throw AmazonAdvertisingError.invalidRequest("Keyword ID is required for update")
+        }
+
+        let accessToken = try await getAccessToken(for: region)
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/keywords/\(keywordId)")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
+        request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let encoder = JSONEncoder()
+        request.httpBody = try encoder.encode(keyword)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AmazonAdvertisingError.invalidResponse
+        }
+
+        if httpResponse.statusCode == 200 {
+            let decoder = JSONDecoder()
+            return try decoder.decode(SponsoredProductsKeyword.self, from: data)
+        } else {
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+        }
+    }
+
+    public func archiveKeyword(
+        keywordId: String,
+        profileId: String,
+        region: AmazonRegion
+    ) async throws {
+        let accessToken = try await getAccessToken(for: region)
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/keywords/\(keywordId)")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
+        request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AmazonAdvertisingError.invalidResponse
+        }
+
+        if httpResponse.statusCode != 200 && httpResponse.statusCode != 204 {
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+        }
+    }
+
+    // MARK: - Product Target Management
+
+    public func listTargets(
+        adGroupId: String?,
+        profileId: String,
+        region: AmazonRegion,
+        stateFilter: [TargetState]?
+    ) async throws -> [SponsoredProductsTarget] {
+        let accessToken = try await getAccessToken(for: region)
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/targets")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
+        request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        // Add filters as query parameters
+        var queryItems: [URLQueryItem] = []
+        if let adGroupId = adGroupId {
+            queryItems.append(URLQueryItem(name: "adGroupIdFilter", value: adGroupId))
+        }
+        if let stateFilter = stateFilter, !stateFilter.isEmpty {
+            queryItems.append(URLQueryItem(name: "stateFilter", value: stateFilter.map(\.rawValue).joined(separator: ",")))
+        }
+
+        if !queryItems.isEmpty {
+            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+            components.queryItems = queryItems
+            request.url = components.url
+        }
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AmazonAdvertisingError.invalidResponse
+        }
+
+        if httpResponse.statusCode == 200 {
+            let decoder = JSONDecoder()
+            return try decoder.decode([SponsoredProductsTarget].self, from: data)
+        } else {
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+        }
+    }
+
+    public func createTarget(
+        target: SponsoredProductsTarget,
+        profileId: String,
+        region: AmazonRegion
+    ) async throws -> SponsoredProductsTarget {
+        let accessToken = try await getAccessToken(for: region)
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/targets")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
+        request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let encoder = JSONEncoder()
+        request.httpBody = try encoder.encode(target)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AmazonAdvertisingError.invalidResponse
+        }
+
+        if httpResponse.statusCode == 200 || httpResponse.statusCode == 201 {
+            let decoder = JSONDecoder()
+            return try decoder.decode(SponsoredProductsTarget.self, from: data)
+        } else {
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+        }
+    }
+
+    public func updateTarget(
+        target: SponsoredProductsTarget,
+        profileId: String,
+        region: AmazonRegion
+    ) async throws -> SponsoredProductsTarget {
+        guard let targetId = target.targetId else {
+            throw AmazonAdvertisingError.invalidRequest("Target ID is required for update")
+        }
+
+        let accessToken = try await getAccessToken(for: region)
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/targets/\(targetId)")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
+        request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let encoder = JSONEncoder()
+        request.httpBody = try encoder.encode(target)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AmazonAdvertisingError.invalidResponse
+        }
+
+        if httpResponse.statusCode == 200 {
+            let decoder = JSONDecoder()
+            return try decoder.decode(SponsoredProductsTarget.self, from: data)
+        } else {
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+        }
+    }
+
+    public func archiveTarget(
+        targetId: String,
+        profileId: String,
+        region: AmazonRegion
+    ) async throws {
+        let accessToken = try await getAccessToken(for: region)
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/targets/\(targetId)")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
+        request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AmazonAdvertisingError.invalidResponse
+        }
+
+        if httpResponse.statusCode != 200 && httpResponse.statusCode != 204 {
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+        }
+    }
 }

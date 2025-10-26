@@ -19,6 +19,7 @@ public enum AmazonAdvertisingError: LocalizedError {
     case timeout
     case apiAccessNotApproved
     case storageError(Error)
+    case invalidRequest(String)
 
     public var errorDescription: String? {
         switch self {
@@ -42,6 +43,8 @@ public enum AmazonAdvertisingError: LocalizedError {
             return "Your Amazon account is not approved for Advertising API access. Please complete the onboarding process at https://advertising.amazon.com/API/docs/en-us/guides/onboarding/overview"
         case .storageError(let error):
             return "Storage error: \(error.localizedDescription)"
+        case .invalidRequest(let message):
+            return "Invalid request: \(message)"
         }
     }
 }
