@@ -161,7 +161,7 @@ public actor LocalOAuthServer {
             // Give the response time to be sent before stopping
             Task {
                 try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
-                await stop()
+                stop()
             }
         } else if let error = queryItems.first(where: { $0.name == "error" })?.value {
             let errorDescription = queryItems.first(where: { $0.name == "error_description" })?.value ?? error
