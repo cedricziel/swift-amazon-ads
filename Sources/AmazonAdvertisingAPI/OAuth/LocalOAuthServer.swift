@@ -47,9 +47,9 @@ public actor LocalOAuthServer {
         self.listener = listener
 
         // Set up new connection handler
-        listener.newConnectionHandler = { [weak self] connection in
+        listener.newConnectionHandler = { connection in
             Task {
-                await self?.handleConnection(connection)
+                await self.handleConnection(connection)
             }
         }
 
