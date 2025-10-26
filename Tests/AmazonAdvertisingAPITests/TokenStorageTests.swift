@@ -5,13 +5,11 @@
 //  Tests for token storage implementations
 //
 
-import Testing
+import XCTest
 @testable import AmazonAdvertisingAPI
 
-@Suite("Token Storage Tests")
-struct TokenStorageTests {
-    @Test("InMemoryTokenStorage stores and retrieves values")
-    func testInMemoryStorage() async throws {
+final class TokenStorageTests: XCTestCase {
+    func testInMemoryStorageStoresAndRetrievesValues() async throws {
         let storage = InMemoryTokenStorage()
         let region = AmazonRegion.northAmerica
         let key = "test_key"
@@ -22,22 +20,21 @@ struct TokenStorageTests {
 
         // Check exists
         let exists = await storage.exists(for: key, region: region)
-        #expect(exists == true)
+        XCTAssertTrue(exists)
 
         // Retrieve value
         let retrieved = try await storage.retrieve(for: key, region: region)
-        #expect(retrieved == value)
+        XCTAssertEqual(retrieved, value)
 
         // Delete value
         try await storage.delete(for: key, region: region)
 
         // Check not exists
         let existsAfterDelete = await storage.exists(for: key, region: region)
-        #expect(existsAfterDelete == false)
+        XCTAssertFalse(existsAfterDelete)
     }
 
-    @Test("InMemoryTokenStorage deletes all values for a region")
-    func testDeleteAllForRegion() async throws {
+    func testInMemoryStorageDeletesAllValuesForRegion() async throws {
         let storage = InMemoryTokenStorage()
         let region1 = AmazonRegion.northAmerica
         let region2 = AmazonRegion.europe
@@ -53,22 +50,26 @@ struct TokenStorageTests {
         // Check region1 values are deleted
         let exists1 = await storage.exists(for: "key1", region: region1)
         let exists2 = await storage.exists(for: "key2", region: region1)
-        #expect(exists1 == false)
-        #expect(exists2 == false)
+        XCTAssertFalse(exists1)
+        XCTAssertFalse(exists2)
 
         // Check region2 value still exists
         let exists3 = await storage.exists(for: "key1", region: region2)
-        #expect(exists3 == true)
+        XCTAssertTrue(exists3)
     }
 
-    @Test("InMemoryTokenStorage throws error for missing value")
-    func testRetrieveThrowsForMissingValue() async throws {
+    func testRetrieveThrowsErrorForMissingValue() async throws {
         let storage = InMemoryTokenStorage()
         let region = AmazonRegion.northAmerica
 
         // Try to retrieve non-existent value
-        await #expect(throws: TokenStorageError.self) {
+        do {
             _ = try await storage.retrieve(for: "nonexistent", region: region)
+            XCTFail("Should have thrown TokenStorageError")
+        } catch is TokenStorageError {
+            // Expected error
+        } catch {
+            XCTFail("Wrong error type: \(error)")
         }
     }
 }

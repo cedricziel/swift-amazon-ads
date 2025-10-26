@@ -5,14 +5,12 @@
 //  Tests for API models
 //
 
-import Testing
+import XCTest
 import Foundation
 @testable import AmazonAdvertisingAPI
 
-@Suite("Model Tests")
-struct ModelTests {
-    @Test("AmazonTokenResponse calculates expiry date correctly")
-    func testTokenResponseExpiryDate() {
+final class ModelTests: XCTestCase {
+    func testTokenResponseCalculatesExpiryDateCorrectly() {
         let beforeDate = Date()
         let tokenResponse = AmazonTokenResponse(
             accessToken: "test_token",
@@ -25,26 +23,23 @@ struct ModelTests {
         let afterDate = Date().addingTimeInterval(3600)
 
         // Expiry date should be approximately 1 hour from now
-        #expect(expiryDate > beforeDate)
-        #expect(expiryDate <= afterDate.addingTimeInterval(1)) // Allow 1 second tolerance
+        XCTAssertTrue(expiryDate > beforeDate)
+        XCTAssertTrue(expiryDate <= afterDate.addingTimeInterval(1)) // Allow 1 second tolerance
     }
 
-    @Test("AmazonRegion provides correct display names")
-    func testRegionDisplayNames() {
-        #expect(AmazonRegion.northAmerica.displayName == "North America")
-        #expect(AmazonRegion.europe.displayName == "Europe")
-        #expect(AmazonRegion.farEast.displayName == "Far East")
+    func testRegionProvidesCorrectDisplayNames() {
+        XCTAssertEqual(AmazonRegion.northAmerica.displayName, "North America")
+        XCTAssertEqual(AmazonRegion.europe.displayName, "Europe")
+        XCTAssertEqual(AmazonRegion.farEast.displayName, "Far East")
     }
 
-    @Test("AmazonRegion provides correct API endpoints")
-    func testRegionEndpoints() {
-        #expect(AmazonRegion.northAmerica.advertisingAPIBaseURL.absoluteString == "https://advertising-api.amazon.com")
-        #expect(AmazonRegion.europe.advertisingAPIBaseURL.absoluteString == "https://advertising-api-eu.amazon.com")
-        #expect(AmazonRegion.farEast.advertisingAPIBaseURL.absoluteString == "https://advertising-api-fe.amazon.com")
+    func testRegionProvidesCorrectAPIEndpoints() {
+        XCTAssertEqual(AmazonRegion.northAmerica.advertisingAPIBaseURL.absoluteString, "https://advertising-api.amazon.com")
+        XCTAssertEqual(AmazonRegion.europe.advertisingAPIBaseURL.absoluteString, "https://advertising-api-eu.amazon.com")
+        XCTAssertEqual(AmazonRegion.farEast.advertisingAPIBaseURL.absoluteString, "https://advertising-api-fe.amazon.com")
     }
 
-    @Test("AmazonProfile can be encoded and decoded")
-    func testProfileCodable() throws {
+    func testProfileCanBeEncodedAndDecoded() throws {
         let profile = AmazonProfile(
             profileId: "123456",
             countryCode: "US",
@@ -64,13 +59,12 @@ struct ModelTests {
         let decoder = JSONDecoder()
         let decoded = try decoder.decode(AmazonProfile.self, from: data)
 
-        #expect(decoded.profileId == profile.profileId)
-        #expect(decoded.countryCode == profile.countryCode)
-        #expect(decoded.accountInfo.name == profile.accountInfo.name)
+        XCTAssertEqual(decoded.profileId, profile.profileId)
+        XCTAssertEqual(decoded.countryCode, profile.countryCode)
+        XCTAssertEqual(decoded.accountInfo.name, profile.accountInfo.name)
     }
 
-    @Test("AmazonManagerAccount can be encoded and decoded")
-    func testManagerAccountCodable() throws {
+    func testManagerAccountCanBeEncodedAndDecoded() throws {
         let managerAccount = AmazonManagerAccount(
             managerAccountId: "MA123",
             managerAccountName: "Test Manager",
@@ -90,8 +84,8 @@ struct ModelTests {
         let decoder = JSONDecoder()
         let decoded = try decoder.decode(AmazonManagerAccount.self, from: data)
 
-        #expect(decoded.managerAccountId == managerAccount.managerAccountId)
-        #expect(decoded.linkedAccounts.count == 1)
-        #expect(decoded.linkedAccounts[0].profileId == "P456")
+        XCTAssertEqual(decoded.managerAccountId, managerAccount.managerAccountId)
+        XCTAssertEqual(decoded.linkedAccounts.count, 1)
+        XCTAssertEqual(decoded.linkedAccounts[0].profileId, "P456")
     }
 }
