@@ -40,8 +40,13 @@ final class AmazonAdvertisingClientTests: XCTestCase {
     }
 
     override func tearDown() async throws {
+        // Cancel any active OAuth authorization for all regions to clean up servers
+        await client?.cancelAuthorization(for: .northAmerica)
+        await client?.cancelAuthorization(for: .europe)
+        await client?.cancelAuthorization(for: .farEast)
+
         MockURLProtocol.reset()
-        await storage.clearAll()
+        await storage?.clearAll()
         client = nil
         storage = nil
         mockSession = nil
@@ -49,6 +54,11 @@ final class AmazonAdvertisingClientTests: XCTestCase {
     }
 
     // MARK: - Helper Methods
+
+    func makeExpiryString(secondsFromNow: TimeInterval) -> String {
+        let expiryDate = Date().addingTimeInterval(secondsFromNow)
+        return ISO8601DateFormatter().string(from: expiryDate)
+    }
 
     func mockSuccessfulTokenResponse() -> AmazonTokenResponse {
         return AmazonTokenResponse(
@@ -129,8 +139,8 @@ final class AmazonAdvertisingClientTests: XCTestCase {
         let region = AmazonRegion.northAmerica
 
         // Store a valid token
-        try await storage.save("valid_access_token", for: "access_token", region: region)
-        try await storage.save(String(Date().timeIntervalSince1970 + 3600), for: "token_expiry", region: region)
+        try await storage.save("valid_access_token", for: TokenStorageKey.accessToken, region: region)
+        try await storage.save(makeExpiryString(secondsFromNow: 3600), for: TokenStorageKey.tokenExpiry, region: region)
 
         let token = try await client.getAccessToken(for: region)
 
@@ -144,9 +154,9 @@ final class AmazonAdvertisingClientTests: XCTestCase {
         let region = AmazonRegion.northAmerica
 
         // Store expired token
-        try await storage.save("expired_token", for: "access_token", region: region)
-        try await storage.save(String(Date().timeIntervalSince1970 - 100), for: "token_expiry", region: region)
-        try await storage.save("refresh_token", for: "refresh_token", region: region)
+        try await storage.save("expired_token", for: TokenStorageKey.accessToken, region: region)
+        try await storage.save(makeExpiryString(secondsFromNow: -100), for: TokenStorageKey.tokenExpiry, region: region)
+        try await storage.save("refresh_token", for: TokenStorageKey.refreshToken, region: region)
 
         // Mock successful token refresh response
         let tokenResponse = mockSuccessfulTokenResponse()
@@ -169,7 +179,7 @@ final class AmazonAdvertisingClientTests: XCTestCase {
         let region = AmazonRegion.northAmerica
 
         // Store refresh token
-        try await storage.save("refresh_token", for: "refresh_token", region: region)
+        try await storage.save("refresh_token", for: TokenStorageKey.refreshToken, region: region)
 
         // Mock successful refresh response
         let tokenResponse = mockSuccessfulTokenResponse()
@@ -183,16 +193,17 @@ final class AmazonAdvertisingClientTests: XCTestCase {
         try await client.refreshToken(for: region)
 
         // Verify new token was saved
-        let savedToken = try await storage.retrieve(for: "access_token", region: region)
+        let savedToken = try await storage.retrieve(for: TokenStorageKey.accessToken, region: region)
         XCTAssertEqual(savedToken, "mock_access_token")
     }
 
     func testIsAuthenticatedReturnsTrueWithValidTokens() async {
         let region = AmazonRegion.northAmerica
 
-        // Store valid tokens
-        try? await storage.save("access_token", for: "access_token", region: region)
-        try? await storage.save(String(Date().timeIntervalSince1970 + 3600), for: "token_expiry", region: region)
+        // Store valid tokens (isAuthenticated checks for both access and refresh tokens)
+        try? await storage.save("access_token", for: TokenStorageKey.accessToken, region: region)
+        try? await storage.save(makeExpiryString(secondsFromNow: 3600), for: TokenStorageKey.tokenExpiry, region: region)
+        try? await storage.save("refresh_token", for: TokenStorageKey.refreshToken, region: region)
 
         let isAuth = await client.isAuthenticated(for: region)
 
@@ -211,14 +222,14 @@ final class AmazonAdvertisingClientTests: XCTestCase {
         let region = AmazonRegion.northAmerica
 
         // Store tokens
-        try await storage.save("access_token", for: "access_token", region: region)
-        try await storage.save("refresh_token", for: "refresh_token", region: region)
+        try await storage.save("access_token", for: TokenStorageKey.accessToken, region: region)
+        try await storage.save("refresh_token", for: TokenStorageKey.refreshToken, region: region)
 
         // Logout
         try await client.logout(for: region)
 
         // Verify tokens are cleared
-        let exists = await storage.exists(for: "access_token", region: region)
+        let exists = await storage.exists(for: TokenStorageKey.accessToken, region: region)
         XCTAssertFalse(exists)
     }
 
@@ -228,8 +239,8 @@ final class AmazonAdvertisingClientTests: XCTestCase {
         let region = AmazonRegion.northAmerica
 
         // Store valid token
-        try await storage.save("access_token", for: "access_token", region: region)
-        try await storage.save(String(Date().timeIntervalSince1970 + 3600), for: "token_expiry", region: region)
+        try await storage.save("access_token", for: TokenStorageKey.accessToken, region: region)
+        try await storage.save(makeExpiryString(secondsFromNow: 3600), for: TokenStorageKey.tokenExpiry, region: region)
 
         // Mock profiles response
         let profiles = [mockProfile()]
@@ -250,8 +261,8 @@ final class AmazonAdvertisingClientTests: XCTestCase {
         let region = AmazonRegion.northAmerica
 
         // Store valid token
-        try await storage.save("access_token", for: "access_token", region: region)
-        try await storage.save(String(Date().timeIntervalSince1970 + 3600), for: "token_expiry", region: region)
+        try await storage.save("access_token", for: TokenStorageKey.accessToken, region: region)
+        try await storage.save(makeExpiryString(secondsFromNow: 3600), for: TokenStorageKey.tokenExpiry, region: region)
 
         // Mock manager accounts response
         let response = AmazonManagerAccountsResponse(managerAccounts: [mockManagerAccount()])
@@ -272,8 +283,8 @@ final class AmazonAdvertisingClientTests: XCTestCase {
         let region = AmazonRegion.northAmerica
 
         // Store valid token
-        try await storage.save("access_token", for: "access_token", region: region)
-        try await storage.save(String(Date().timeIntervalSince1970 + 3600), for: "token_expiry", region: region)
+        try await storage.save("access_token", for: TokenStorageKey.accessToken, region: region)
+        try await storage.save(makeExpiryString(secondsFromNow: 3600), for: TokenStorageKey.tokenExpiry, region: region)
 
         // Mock successful profiles response
         let profiles = [mockProfile()]
@@ -293,8 +304,8 @@ final class AmazonAdvertisingClientTests: XCTestCase {
         let region = AmazonRegion.northAmerica
 
         // Store valid token but mock 401 response
-        try await storage.save("invalid_token", for: "access_token", region: region)
-        try await storage.save(String(Date().timeIntervalSince1970 + 3600), for: "token_expiry", region: region)
+        try await storage.save("invalid_token", for: TokenStorageKey.accessToken, region: region)
+        try await storage.save(makeExpiryString(secondsFromNow: 3600), for: TokenStorageKey.tokenExpiry, region: region)
 
         // Mock 401 unauthorized
         MockURLProtocol.setRequestHandler { request in
@@ -315,9 +326,10 @@ final class AmazonAdvertisingClientTests: XCTestCase {
         let naRegion = AmazonRegion.northAmerica
         let euRegion = AmazonRegion.europe
 
-        // Store token for NA only
-        try? await storage.save("na_token", for: "access_token", region: naRegion)
-        try? await storage.save(String(Date().timeIntervalSince1970 + 3600), for: "token_expiry", region: naRegion)
+        // Store tokens for NA only (isAuthenticated checks for both access and refresh tokens)
+        try? await storage.save("na_token", for: TokenStorageKey.accessToken, region: naRegion)
+        try? await storage.save(makeExpiryString(secondsFromNow: 3600), for: TokenStorageKey.tokenExpiry, region: naRegion)
+        try? await storage.save("na_refresh", for: TokenStorageKey.refreshToken, region: naRegion)
 
         let naAuth = await client.isAuthenticated(for: naRegion)
         let euAuth = await client.isAuthenticated(for: euRegion)
@@ -354,8 +366,8 @@ final class AmazonAdvertisingClientTests: XCTestCase {
         let region = AmazonRegion.northAmerica
 
         // Store valid token
-        try await storage.save("access_token", for: "access_token", region: region)
-        try await storage.save(String(Date().timeIntervalSince1970 + 3600), for: "token_expiry", region: region)
+        try await storage.save("access_token", for: TokenStorageKey.accessToken, region: region)
+        try await storage.save(makeExpiryString(secondsFromNow: 3600), for: TokenStorageKey.tokenExpiry, region: region)
 
         // Mock 500 server error
         MockURLProtocol.setRequestHandler { request in
@@ -382,7 +394,8 @@ final class AmazonAdvertisingClientTests: XCTestCase {
     func testNoAccessTokenThrowsError() async throws {
         let region = AmazonRegion.northAmerica
 
-        // Don't store any token
+        // Store valid expiry so it doesn't try to refresh, but don't store access token
+        try await storage.save(makeExpiryString(secondsFromNow: 3600), for: TokenStorageKey.tokenExpiry, region: region)
 
         do {
             _ = try await client.getAccessToken(for: region)
@@ -402,8 +415,8 @@ final class AmazonAdvertisingClientTests: XCTestCase {
         let region = AmazonRegion.northAmerica
 
         // Store expired access token but no refresh token
-        try await storage.save("expired_token", for: "access_token", region: region)
-        try await storage.save(String(Date().timeIntervalSince1970 - 100), for: "token_expiry", region: region)
+        try await storage.save("expired_token", for: TokenStorageKey.accessToken, region: region)
+        try await storage.save(makeExpiryString(secondsFromNow: -100), for: TokenStorageKey.tokenExpiry, region: region)
 
         do {
             _ = try await client.getAccessToken(for: region)
@@ -423,9 +436,9 @@ final class AmazonAdvertisingClientTests: XCTestCase {
         let region = AmazonRegion.northAmerica
 
         // Store expired token with refresh token
-        try await storage.save("expired_token", for: "access_token", region: region)
-        try await storage.save(String(Date().timeIntervalSince1970 - 100), for: "token_expiry", region: region)
-        try await storage.save("refresh_token", for: "refresh_token", region: region)
+        try await storage.save("expired_token", for: TokenStorageKey.accessToken, region: region)
+        try await storage.save(makeExpiryString(secondsFromNow: -100), for: TokenStorageKey.tokenExpiry, region: region)
+        try await storage.save("refresh_token", for: TokenStorageKey.refreshToken, region: region)
 
         // Mock successful refresh
         let tokenResponse = mockSuccessfulTokenResponse()
@@ -449,8 +462,8 @@ final class AmazonAdvertisingClientTests: XCTestCase {
         let region = AmazonRegion.northAmerica
 
         // Store valid token
-        try await storage.save("access_token", for: "access_token", region: region)
-        try await storage.save(String(Date().timeIntervalSince1970 + 3600), for: "token_expiry", region: region)
+        try await storage.save("access_token", for: TokenStorageKey.accessToken, region: region)
+        try await storage.save(makeExpiryString(secondsFromNow: 3600), for: TokenStorageKey.tokenExpiry, region: region)
 
         // Mock invalid JSON response
         MockURLProtocol.setRequestHandler { request in
@@ -474,8 +487,8 @@ final class AmazonAdvertisingClientTests: XCTestCase {
         let region = AmazonRegion.northAmerica
 
         // Store valid token
-        try await storage.save("access_token", for: "access_token", region: region)
-        try await storage.save(String(Date().timeIntervalSince1970 + 3600), for: "token_expiry", region: region)
+        try await storage.save("access_token", for: TokenStorageKey.accessToken, region: region)
+        try await storage.save(makeExpiryString(secondsFromNow: 3600), for: TokenStorageKey.tokenExpiry, region: region)
 
         // Mock 403 forbidden (API not approved)
         MockURLProtocol.setRequestHandler { request in
@@ -503,7 +516,7 @@ final class AmazonAdvertisingClientTests: XCTestCase {
         let region = AmazonRegion.northAmerica
 
         // Store refresh token
-        try await storage.save("refresh_token", for: "refresh_token", region: region)
+        try await storage.save("refresh_token", for: TokenStorageKey.refreshToken, region: region)
 
         // Mock OAuth error response
         struct OAuthErrorResponse: Codable {
@@ -538,8 +551,8 @@ final class AmazonAdvertisingClientTests: XCTestCase {
         let region = AmazonRegion.northAmerica
 
         // Store valid token
-        try await storage.save("access_token", for: "access_token", region: region)
-        try await storage.save(String(Date().timeIntervalSince1970 + 3600), for: "token_expiry", region: region)
+        try await storage.save("access_token", for: TokenStorageKey.accessToken, region: region)
+        try await storage.save(makeExpiryString(secondsFromNow: 3600), for: TokenStorageKey.tokenExpiry, region: region)
 
         // Mock timeout error
         MockURLProtocol.setRequestHandler { request in
@@ -584,8 +597,8 @@ final class AmazonAdvertisingClientTests: XCTestCase {
         let region = AmazonRegion.northAmerica
 
         // Store valid token
-        try await storage.save("access_token", for: "access_token", region: region)
-        try await storage.save(String(Date().timeIntervalSince1970 + 3600), for: "token_expiry", region: region)
+        try await storage.save("access_token", for: TokenStorageKey.accessToken, region: region)
+        try await storage.save(makeExpiryString(secondsFromNow: 3600), for: TokenStorageKey.tokenExpiry, region: region)
 
         // Mock 429 rate limited
         MockURLProtocol.setRequestHandler { request in
