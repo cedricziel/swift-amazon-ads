@@ -14,6 +14,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
     private let clientSecret: String
     private let storage: TokenStorageProtocol
     private let htmlProvider: OAuthHTMLProvider
+    private let urlSession: URLSession
 
     // OAuth servers - one per region for concurrent auth attempts
     private var oauthServers: [AmazonRegion: LocalOAuthServer] = [:]
@@ -29,16 +30,19 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
     ///   - clientSecret: Amazon Advertising API client secret
     ///   - storage: Storage implementation for tokens and credentials
     ///   - htmlProvider: HTML provider for OAuth callback pages
+    ///   - urlSession: URL session for HTTP requests (defaults to .shared)
     public init(
         clientId: String,
         clientSecret: String,
         storage: TokenStorageProtocol,
-        htmlProvider: OAuthHTMLProvider = DefaultOAuthHTMLProvider()
+        htmlProvider: OAuthHTMLProvider = DefaultOAuthHTMLProvider(),
+        urlSession: URLSession = .shared
     ) {
         self.clientId = clientId
         self.clientSecret = clientSecret
         self.storage = storage
         self.htmlProvider = htmlProvider
+        self.urlSession = urlSession
     }
 
     // MARK: - OAuth Authorization
@@ -138,7 +142,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             .data(using: String.Encoding.utf8)
 
         // Make request
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await urlSession.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AmazonAdvertisingError.invalidResponse
@@ -196,7 +200,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await urlSession.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AmazonAdvertisingError.invalidResponse
@@ -221,7 +225,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await urlSession.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AmazonAdvertisingError.invalidResponse
@@ -302,7 +306,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             .data(using: .utf8)
 
         // Make request
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await urlSession.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AmazonAdvertisingError.invalidResponse
@@ -434,7 +438,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             request.url = components.url
         }
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await urlSession.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AmazonAdvertisingError.invalidResponse
@@ -463,7 +467,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await urlSession.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AmazonAdvertisingError.invalidResponse
@@ -495,7 +499,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         let encoder = JSONEncoder()
         request.httpBody = try encoder.encode(campaign)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await urlSession.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AmazonAdvertisingError.invalidResponse
@@ -531,7 +535,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         let encoder = JSONEncoder()
         request.httpBody = try encoder.encode(campaign)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await urlSession.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AmazonAdvertisingError.invalidResponse
@@ -559,7 +563,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
         request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
 
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (_, response) = try await urlSession.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AmazonAdvertisingError.invalidResponse
@@ -603,7 +607,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             request.url = components.url
         }
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await urlSession.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AmazonAdvertisingError.invalidResponse
@@ -632,7 +636,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await urlSession.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AmazonAdvertisingError.invalidResponse
@@ -664,7 +668,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         let encoder = JSONEncoder()
         request.httpBody = try encoder.encode(adGroup)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await urlSession.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AmazonAdvertisingError.invalidResponse
@@ -700,7 +704,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         let encoder = JSONEncoder()
         request.httpBody = try encoder.encode(adGroup)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await urlSession.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AmazonAdvertisingError.invalidResponse
@@ -728,7 +732,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
         request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
 
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (_, response) = try await urlSession.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AmazonAdvertisingError.invalidResponse
@@ -772,7 +776,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             request.url = components.url
         }
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await urlSession.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AmazonAdvertisingError.invalidResponse
@@ -804,7 +808,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         let encoder = JSONEncoder()
         request.httpBody = try encoder.encode(productAd)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await urlSession.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AmazonAdvertisingError.invalidResponse
@@ -840,7 +844,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         let encoder = JSONEncoder()
         request.httpBody = try encoder.encode(productAd)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await urlSession.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AmazonAdvertisingError.invalidResponse
@@ -868,7 +872,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
         request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
 
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (_, response) = try await urlSession.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AmazonAdvertisingError.invalidResponse
@@ -912,7 +916,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             request.url = components.url
         }
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await urlSession.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AmazonAdvertisingError.invalidResponse
@@ -944,7 +948,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         let encoder = JSONEncoder()
         request.httpBody = try encoder.encode(keyword)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await urlSession.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AmazonAdvertisingError.invalidResponse
@@ -980,7 +984,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         let encoder = JSONEncoder()
         request.httpBody = try encoder.encode(keyword)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await urlSession.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AmazonAdvertisingError.invalidResponse
@@ -1008,7 +1012,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
         request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
 
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (_, response) = try await urlSession.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AmazonAdvertisingError.invalidResponse
@@ -1052,7 +1056,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             request.url = components.url
         }
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await urlSession.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AmazonAdvertisingError.invalidResponse
@@ -1084,7 +1088,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         let encoder = JSONEncoder()
         request.httpBody = try encoder.encode(target)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await urlSession.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AmazonAdvertisingError.invalidResponse
@@ -1120,7 +1124,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         let encoder = JSONEncoder()
         request.httpBody = try encoder.encode(target)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await urlSession.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AmazonAdvertisingError.invalidResponse
@@ -1148,7 +1152,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
         request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
 
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (_, response) = try await urlSession.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AmazonAdvertisingError.invalidResponse
