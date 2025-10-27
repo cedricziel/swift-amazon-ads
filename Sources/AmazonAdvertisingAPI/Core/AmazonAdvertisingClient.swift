@@ -116,11 +116,14 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
     // MARK: - Token Management
 
     public func refreshToken(for region: AmazonRegion) async throws {
+        print("[Token] Refreshing access token for region \(region)...")
+
         // Retrieve refresh token
         guard let refreshToken = try? await storage.retrieve(
             for: TokenStorageKey.refreshToken,
             region: region
         ) else {
+            print("[Token] ERROR: No refresh token available for region \(region)")
             throw AmazonAdvertisingError.noRefreshToken
         }
 
@@ -156,7 +159,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             if let errorResponse = try? JSONDecoder().decode(AmazonOAuthError.self, from: data) {
                 throw AmazonAdvertisingError.oauthError(errorResponse.error, errorResponse.errorDetail)
             }
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+            throw makeHTTPError(statusCode: httpResponse.statusCode, data: data)
         }
     }
 
@@ -167,8 +170,10 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             region: region
         ),
            let expiryDate = ISO8601DateFormatter().date(from: expiryString) {
+            let timeUntilExpiry = expiryDate.timeIntervalSinceNow
+
             // If token expires in less than 5 minutes, refresh it
-            if expiryDate.timeIntervalSinceNow < 300 {
+            if timeUntilExpiry < 300 {
                 try await refreshToken(for: region)
             }
         } else {
@@ -210,7 +215,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             let profiles = try JSONDecoder().decode([AmazonProfile].self, from: data)
             return profiles
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
         }
     }
 
@@ -235,7 +240,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             let managerAccounts = try JSONDecoder().decode(AmazonManagerAccountsResponse.self, from: data)
             return managerAccounts
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
         }
     }
 
@@ -320,7 +325,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             if let errorResponse = try? JSONDecoder().decode(AmazonOAuthError.self, from: data) {
                 throw AmazonAdvertisingError.oauthError(errorResponse.error, errorResponse.errorDetail)
             }
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
         }
     }
 
@@ -420,22 +425,24 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         stateFilter: [CampaignState]?
     ) async throws -> [SponsoredProductsCampaign] {
         let accessToken = try await getAccessToken(for: region)
-        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/campaigns")
+        // V3 API uses POST /sp/campaigns/list
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/campaigns/list")
 
         var request = URLRequest(url: url)
-        request.httpMethod = "GET"
+        request.httpMethod = "POST"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
         request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        // Add state filter as query parameter if provided
+        // V3 API uses request body for filters instead of query parameters
         if let stateFilter = stateFilter, !stateFilter.isEmpty {
-            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
-            components.queryItems = [
-                URLQueryItem(name: "stateFilter", value: stateFilter.map(\.rawValue).joined(separator: ","))
+            let requestBody: [String: Any] = [
+                "stateFilter": [
+                    "include": stateFilter.map(\.rawValue)
+                ]
             ]
-            request.url = components.url
+            request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
         }
 
         let (data, response) = try await urlSession.data(for: request)
@@ -446,9 +453,10 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
 
         if httpResponse.statusCode == 200 {
             let decoder = JSONDecoder()
-            return try decoder.decode([SponsoredProductsCampaign].self, from: data)
+            let campaigns = try decoder.decode([SponsoredProductsCampaign].self, from: data)
+            return campaigns
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+            throw makeHTTPError(statusCode: httpResponse.statusCode, data: data)
         }
     }
 
@@ -477,7 +485,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             let decoder = JSONDecoder()
             return try decoder.decode(SponsoredProductsCampaign.self, from: data)
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
         }
     }
 
@@ -509,7 +517,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             let decoder = JSONDecoder()
             return try decoder.decode(SponsoredProductsCampaign.self, from: data)
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
         }
     }
 
@@ -545,7 +553,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             let decoder = JSONDecoder()
             return try decoder.decode(SponsoredProductsCampaign.self, from: data)
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
         }
     }
 
@@ -570,7 +578,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         }
 
         if httpResponse.statusCode != 200 && httpResponse.statusCode != 204 {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
         }
     }
 
@@ -617,7 +625,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             let decoder = JSONDecoder()
             return try decoder.decode([SponsoredProductsAdGroup].self, from: data)
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
         }
     }
 
@@ -646,7 +654,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             let decoder = JSONDecoder()
             return try decoder.decode(SponsoredProductsAdGroup.self, from: data)
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
         }
     }
 
@@ -678,7 +686,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             let decoder = JSONDecoder()
             return try decoder.decode(SponsoredProductsAdGroup.self, from: data)
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
         }
     }
 
@@ -714,7 +722,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             let decoder = JSONDecoder()
             return try decoder.decode(SponsoredProductsAdGroup.self, from: data)
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
         }
     }
 
@@ -739,7 +747,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         }
 
         if httpResponse.statusCode != 200 && httpResponse.statusCode != 204 {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
         }
     }
 
@@ -786,7 +794,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             let decoder = JSONDecoder()
             return try decoder.decode([SponsoredProductsProductAd].self, from: data)
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
         }
     }
 
@@ -818,7 +826,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             let decoder = JSONDecoder()
             return try decoder.decode(SponsoredProductsProductAd.self, from: data)
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
         }
     }
 
@@ -854,7 +862,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             let decoder = JSONDecoder()
             return try decoder.decode(SponsoredProductsProductAd.self, from: data)
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
         }
     }
 
@@ -879,7 +887,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         }
 
         if httpResponse.statusCode != 200 && httpResponse.statusCode != 204 {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
         }
     }
 
@@ -926,7 +934,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             let decoder = JSONDecoder()
             return try decoder.decode([SponsoredProductsKeyword].self, from: data)
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
         }
     }
 
@@ -958,7 +966,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             let decoder = JSONDecoder()
             return try decoder.decode(SponsoredProductsKeyword.self, from: data)
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
         }
     }
 
@@ -994,7 +1002,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             let decoder = JSONDecoder()
             return try decoder.decode(SponsoredProductsKeyword.self, from: data)
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
         }
     }
 
@@ -1019,7 +1027,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         }
 
         if httpResponse.statusCode != 200 && httpResponse.statusCode != 204 {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
         }
     }
 
@@ -1066,7 +1074,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             let decoder = JSONDecoder()
             return try decoder.decode([SponsoredProductsTarget].self, from: data)
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
         }
     }
 
@@ -1098,7 +1106,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             let decoder = JSONDecoder()
             return try decoder.decode(SponsoredProductsTarget.self, from: data)
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
         }
     }
 
@@ -1134,7 +1142,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             let decoder = JSONDecoder()
             return try decoder.decode(SponsoredProductsTarget.self, from: data)
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
         }
     }
 
@@ -1159,7 +1167,15 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         }
 
         if httpResponse.statusCode != 200 && httpResponse.statusCode != 204 {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode)
+            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
         }
+    }
+
+    // MARK: - Private Helpers
+
+    /// Creates an HTTP error with response body included
+    private func makeHTTPError(statusCode: Int, data: Data) -> AmazonAdvertisingError {
+        let responseBody = String(data: data, encoding: .utf8)
+        return AmazonAdvertisingError.httpError(statusCode, responseBody: responseBody)
     }
 }
