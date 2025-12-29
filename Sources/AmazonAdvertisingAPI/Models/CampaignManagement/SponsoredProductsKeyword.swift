@@ -7,6 +7,69 @@
 
 import Foundation
 
+// MARK: - V3 API Response Types
+
+/// Response wrapper for keyword list endpoint
+public struct SPKeywordListResponse: Codable, Sendable {
+    public let keywords: [SponsoredProductsKeyword]
+    public let nextToken: String?
+    public let totalResults: Int?
+
+    public init(keywords: [SponsoredProductsKeyword], nextToken: String? = nil, totalResults: Int? = nil) {
+        self.keywords = keywords
+        self.nextToken = nextToken
+        self.totalResults = totalResults
+    }
+}
+
+/// Batch response wrapper for keyword operations
+public struct SPKeywordBatchResponse: Codable, Sendable {
+    public let keywords: SPKeywordBatchResult
+
+    public init(keywords: SPKeywordBatchResult) {
+        self.keywords = keywords
+    }
+}
+
+/// Batch result containing success and error items
+public struct SPKeywordBatchResult: Codable, Sendable {
+    public let success: [SPKeywordSuccessItem]
+    public let error: [SPKeywordErrorItem]
+
+    public init(success: [SPKeywordSuccessItem] = [], error: [SPKeywordErrorItem] = []) {
+        self.success = success
+        self.error = error
+    }
+}
+
+/// Success item in batch response
+public struct SPKeywordSuccessItem: Codable, Sendable {
+    public let keyword: SponsoredProductsKeyword
+    public let keywordId: String?
+    public let index: Int?
+
+    public init(keyword: SponsoredProductsKeyword, keywordId: String? = nil, index: Int? = nil) {
+        self.keyword = keyword
+        self.keywordId = keywordId
+        self.index = index
+    }
+}
+
+/// Error item in batch response
+public struct SPKeywordErrorItem: Codable, Sendable {
+    public let keywordId: String?
+    public let index: Int?
+    public let errors: [SPApiError]
+
+    public init(keywordId: String? = nil, index: Int? = nil, errors: [SPApiError] = []) {
+        self.keywordId = keywordId
+        self.index = index
+        self.errors = errors
+    }
+}
+
+// MARK: - Keyword Entity
+
 /// Sponsored Products keyword targeting entity
 public struct SponsoredProductsKeyword: Codable, Sendable, Identifiable {
     /// Amazon's keyword identifier (read-only, assigned by Amazon)
@@ -62,23 +125,23 @@ public struct SponsoredProductsKeyword: Codable, Sendable, Identifiable {
     }
 }
 
-/// Keyword match type
+/// Keyword match type (V3 API uses UPPERCASE)
 public enum KeywordMatchType: String, Codable, Sendable, CaseIterable {
     /// Exact match - ads show for exact keyword only
-    case exact
+    case exact = "EXACT"
 
     /// Phrase match - ads show for phrases containing the keyword
-    case phrase
+    case phrase = "PHRASE"
 
     /// Broad match - ads show for related searches
-    case broad
+    case broad = "BROAD"
 }
 
-/// Keyword state
+/// Keyword state (V3 API uses UPPERCASE)
 public enum KeywordState: String, Codable, Sendable, CaseIterable {
-    case enabled
-    case paused
-    case archived
+    case enabled = "ENABLED"
+    case paused = "PAUSED"
+    case archived = "ARCHIVED"
 }
 
 // MARK: - Negative Keywords
@@ -128,17 +191,17 @@ public struct SponsoredProductsNegativeKeyword: Codable, Sendable, Identifiable 
     }
 }
 
-/// Negative keyword match type (exact and phrase only)
+/// Negative keyword match type (V3 API uses UPPERCASE with underscore)
 public enum NegativeKeywordMatchType: String, Codable, Sendable, CaseIterable {
     /// Exact match - exclude exact keyword only
-    case negativeExact
+    case negativeExact = "NEGATIVE_EXACT"
 
     /// Phrase match - exclude phrases containing the keyword
-    case negativePhrase
+    case negativePhrase = "NEGATIVE_PHRASE"
 }
 
-/// Negative keyword state
+/// Negative keyword state (V3 API uses UPPERCASE)
 public enum NegativeKeywordState: String, Codable, Sendable, CaseIterable {
-    case enabled
-    case deleted
+    case enabled = "ENABLED"
+    case deleted = "DELETED"
 }

@@ -20,6 +20,7 @@ public enum AmazonAdvertisingError: LocalizedError {
     case apiAccessNotApproved
     case storageError(Error)
     case invalidRequest(String)
+    case apiError(String)
 
     public var errorDescription: String? {
         switch self {
@@ -49,6 +50,8 @@ public enum AmazonAdvertisingError: LocalizedError {
             return "Storage error: \(error.localizedDescription)"
         case .invalidRequest(let message):
             return "Invalid request: \(message)"
+        case .apiError(let message):
+            return "API Error: \(message)"
         }
     }
 
@@ -63,6 +66,8 @@ public enum AmazonAdvertisingError: LocalizedError {
             return "Forbidden (HTTP 403): Access denied. Check that your account has permission to access this profile and that API access is enabled."
         case 404:
             return "Not Found (HTTP 404): The requested profile or resource was not found. Verify the profile ID is correct."
+        case 415:
+            return "Unsupported Media Type (HTTP 415): The Content-Type header is not supported by this API endpoint. Check API version requirements."
         case 429:
             return "Too Many Requests (HTTP 429): Rate limit exceeded. Please wait before trying again."
         case 500:

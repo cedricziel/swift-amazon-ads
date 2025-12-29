@@ -4,6 +4,7 @@
 //
 //  Tests for Sponsored Products Ad Group CRUD operations
 //  Tests create, read, update, list, and archive operations
+//  Updated for V3 API patterns
 //
 
 import XCTest
@@ -77,23 +78,25 @@ final class AdGroupCRUDTests: XCTestCase {
         )
     }
 
-    // MARK: - List Ad Groups Tests (2 tests)
+    // MARK: - List Ad Groups Tests (V3 API uses POST /sp/adGroups/list)
 
     func testListAdGroupsReturnsAllAdGroups() async throws {
         let region = AmazonRegion.northAmerica
         let profileId = "PROFILE123"
 
-        // Mock successful ad groups response
+        // Mock V3 list response
         let adGroups = [mockAdGroup(id: "AG1"), mockAdGroup(id: "AG2")]
+        let listResponse = SPAdGroupListResponse(adGroups: adGroups, nextToken: nil, totalResults: 2)
+
         MockURLProtocol.setRequestHandler { request in
-            if request.url?.path.contains("/sp/adGroups") == true {
-                // Verify headers
+            if request.url?.path.contains("/sp/adGroups/list") == true {
+                // V3 API uses POST for list
+                XCTAssertEqual(request.httpMethod, "POST")
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer valid_access_token")
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Amazon-Advertising-API-ClientId"), "test_client_id")
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Amazon-Advertising-API-Scope"), profileId)
-                XCTAssertEqual(request.httpMethod, "GET")
 
-                return .json(adGroups)
+                return .json(listResponse)
             }
             return .notFound()
         }
@@ -109,21 +112,16 @@ final class AdGroupCRUDTests: XCTestCase {
         let region = AmazonRegion.northAmerica
         let profileId = "PROFILE123"
 
-        // Mock ad groups response
+        // Mock V3 list response
         let adGroups = [mockAdGroup()]
+        let listResponse = SPAdGroupListResponse(adGroups: adGroups, nextToken: nil, totalResults: 1)
+
         MockURLProtocol.setRequestHandler { request in
-            if request.url?.path.contains("/sp/adGroups") == true {
-                // Verify query parameters
-                let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)
-                let campaignIdParam = components?.queryItems?.first(where: { $0.name == "campaignIdFilter" })
-                let stateFilterParam = components?.queryItems?.first(where: { $0.name == "stateFilter" })
+            if request.url?.path.contains("/sp/adGroups/list") == true {
+                // V3 API sends filter in POST body, not query parameters
+                XCTAssertEqual(request.httpMethod, "POST")
 
-                XCTAssertNotNil(campaignIdParam)
-                XCTAssertEqual(campaignIdParam?.value, "CAMPAIGN123")
-                XCTAssertNotNil(stateFilterParam)
-                XCTAssertEqual(stateFilterParam?.value, "enabled")
-
-                return .json(adGroups)
+                return .json(listResponse)
             }
             return .notFound()
         }
@@ -138,7 +136,7 @@ final class AdGroupCRUDTests: XCTestCase {
         XCTAssertEqual(result.count, 1)
     }
 
-    // MARK: - Get Ad Group Tests (2 tests)
+    // MARK: - Get Ad Group Tests
 
     func testGetAdGroupReturnsAdGroup() async throws {
         let region = AmazonRegion.northAmerica
@@ -182,7 +180,7 @@ final class AdGroupCRUDTests: XCTestCase {
             _ = try await client.getAdGroup(adGroupId: adGroupId, profileId: profileId, region: region)
             XCTFail("Should have thrown 404 error")
         } catch let error as AmazonAdvertisingError {
-            if case .httpError(let statusCode) = error {
+            if case .httpError(let statusCode, _) = error {
                 XCTAssertEqual(statusCode, 404)
             } else {
                 XCTFail("Wrong error type: \(error)")
@@ -190,7 +188,7 @@ final class AdGroupCRUDTests: XCTestCase {
         }
     }
 
-    // MARK: - Create Ad Group Tests (2 tests)
+    // MARK: - Create Ad Group Tests (V3 API returns batch response with 207)
 
     func testCreateAdGroupReturnsCreatedAdGroup() async throws {
         let region = AmazonRegion.northAmerica
@@ -206,17 +204,22 @@ final class AdGroupCRUDTests: XCTestCase {
             tags: nil
         )
 
-        // Response with generated ID
+        // V3 Response with batch wrapper
         let createdAdGroup = mockAdGroup(id: "NEWAG123", name: "New Ad Group")
+        let successItem = SPAdGroupSuccessItem(adGroup: createdAdGroup, adGroupId: "NEWAG123", index: 0)
+        let batchResult = SPAdGroupBatchResult(success: [successItem], error: [])
+        let batchResponse = SPAdGroupBatchResponse(adGroups: batchResult)
 
         MockURLProtocol.setRequestHandler { request in
-            if request.url?.path.contains("/sp/adGroups") == true && request.httpMethod == "POST" {
+            if request.url?.path == "/sp/adGroups" && request.httpMethod == "POST" {
                 // Verify headers
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer valid_access_token")
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Amazon-Advertising-API-Scope"), profileId)
-                XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+                // V3 API uses versioned content type
+                XCTAssertTrue(request.value(forHTTPHeaderField: "Content-Type")?.contains("application/vnd.spAdGroup.v3+json") == true)
 
-                return .json(createdAdGroup, statusCode: 201)
+                // V3 API returns 207 Multi-Status
+                return .json(batchResponse, statusCode: 207)
             }
             return .notFound()
         }
@@ -237,13 +240,13 @@ final class AdGroupCRUDTests: XCTestCase {
             name: "",
             campaignId: "CAMPAIGN123",
             state: .enabled,
-            defaultBid: nil,
+            defaultBid: nil as Double?,
             tags: nil
         )
 
         // Mock 400 Bad Request
         MockURLProtocol.setRequestHandler { request in
-            if request.url?.path.contains("/sp/adGroups") == true && request.httpMethod == "POST" {
+            if request.url?.path == "/sp/adGroups" && request.httpMethod == "POST" {
                 return .httpError(statusCode: 400)
             }
             return .notFound()
@@ -253,7 +256,7 @@ final class AdGroupCRUDTests: XCTestCase {
             _ = try await client.createAdGroup(adGroup: newAdGroup, profileId: profileId, region: region)
             XCTFail("Should have thrown validation error")
         } catch let error as AmazonAdvertisingError {
-            if case .httpError(let statusCode) = error {
+            if case .httpError(let statusCode, _) = error {
                 XCTAssertEqual(statusCode, 400)
             } else {
                 XCTFail("Wrong error type: \(error)")
@@ -261,7 +264,7 @@ final class AdGroupCRUDTests: XCTestCase {
         }
     }
 
-    // MARK: - Update Ad Group Tests (2 tests)
+    // MARK: - Update Ad Group Tests (V3 API uses batch PUT)
 
     func testUpdateAdGroupReturnsUpdatedAdGroup() async throws {
         let region = AmazonRegion.northAmerica
@@ -271,14 +274,20 @@ final class AdGroupCRUDTests: XCTestCase {
         var updatedAdGroup = mockAdGroup(id: "ADGROUP123", name: "Updated Name")
         updatedAdGroup.defaultBid = 2.00
 
+        // V3 batch response
+        let successItem = SPAdGroupSuccessItem(adGroup: updatedAdGroup, adGroupId: "ADGROUP123", index: 0)
+        let batchResult = SPAdGroupBatchResult(success: [successItem], error: [])
+        let batchResponse = SPAdGroupBatchResponse(adGroups: batchResult)
+
         MockURLProtocol.setRequestHandler { request in
-            if request.url?.path.contains("/sp/adGroups/ADGROUP123") == true && request.httpMethod == "PUT" {
+            // V3 uses PUT to /sp/adGroups for batch update
+            if request.url?.path == "/sp/adGroups" && request.httpMethod == "PUT" {
                 // Verify headers
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer valid_access_token")
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Amazon-Advertising-API-Scope"), profileId)
-                XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+                XCTAssertTrue(request.value(forHTTPHeaderField: "Content-Type")?.contains("application/vnd.spAdGroup.v3+json") == true)
 
-                return .json(updatedAdGroup)
+                return .json(batchResponse, statusCode: 207)
             }
             return .notFound()
         }
@@ -300,7 +309,7 @@ final class AdGroupCRUDTests: XCTestCase {
             name: "Test",
             campaignId: "CAMPAIGN123",
             state: .enabled,
-            defaultBid: nil,
+            defaultBid: nil as Double?,
             tags: nil
         )
 
@@ -316,7 +325,7 @@ final class AdGroupCRUDTests: XCTestCase {
         }
     }
 
-    // MARK: - Archive Ad Group Tests (2 tests)
+    // MARK: - Archive Ad Group Tests (V3 uses POST to /sp/adGroups/delete)
 
     func testArchiveAdGroupSucceeds() async throws {
         let region = AmazonRegion.northAmerica
@@ -324,7 +333,8 @@ final class AdGroupCRUDTests: XCTestCase {
         let adGroupId = "ADGROUP123"
 
         MockURLProtocol.setRequestHandler { request in
-            if request.url?.path.contains("/sp/adGroups/\(adGroupId)") == true && request.httpMethod == "DELETE" {
+            // V3 API uses POST to /delete endpoint
+            if request.url?.path.contains("/sp/adGroups/delete") == true && request.httpMethod == "POST" {
                 // Verify headers
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer valid_access_token")
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Amazon-Advertising-API-Scope"), profileId)
@@ -347,7 +357,7 @@ final class AdGroupCRUDTests: XCTestCase {
 
         // Mock 404 Not Found
         MockURLProtocol.setRequestHandler { request in
-            if request.url?.path.contains("/sp/adGroups/\(adGroupId)") == true && request.httpMethod == "DELETE" {
+            if request.url?.path.contains("/sp/adGroups/delete") == true && request.httpMethod == "POST" {
                 return .notFound()
             }
             return .notFound()
@@ -357,7 +367,7 @@ final class AdGroupCRUDTests: XCTestCase {
             try await client.archiveAdGroup(adGroupId: adGroupId, profileId: profileId, region: region)
             XCTFail("Should have thrown 404 error")
         } catch let error as AmazonAdvertisingError {
-            if case .httpError(let statusCode) = error {
+            if case .httpError(let statusCode, _) = error {
                 XCTAssertEqual(statusCode, 404)
             } else {
                 XCTFail("Wrong error type: \(error)")

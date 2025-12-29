@@ -381,7 +381,7 @@ final class AmazonAdvertisingClientTests: XCTestCase {
             _ = try await client.fetchProfiles(for: region)
             XCTFail("Should have thrown HTTP error")
         } catch let error as AmazonAdvertisingError {
-            if case .httpError(let code) = error {
+            if case .httpError(let code, _) = error {
                 XCTAssertEqual(code, 500)
             } else {
                 XCTFail("Wrong error type: \(error)")
@@ -502,7 +502,7 @@ final class AmazonAdvertisingClientTests: XCTestCase {
             _ = try await client.fetchProfiles(for: region)
             XCTFail("Should have thrown HTTP 403 error")
         } catch let error as AmazonAdvertisingError {
-            if case .httpError(let code) = error {
+            if case .httpError(let code, _) = error {
                 XCTAssertEqual(code, 403)
             } else {
                 XCTFail("Wrong error type: \(error)")
@@ -612,7 +612,7 @@ final class AmazonAdvertisingClientTests: XCTestCase {
             _ = try await client.fetchProfiles(for: region)
             XCTFail("Should have thrown HTTP 429 error")
         } catch let error as AmazonAdvertisingError {
-            if case .httpError(let code) = error {
+            if case .httpError(let code, _) = error {
                 XCTAssertEqual(code, 429)
             } else {
                 XCTFail("Wrong error type: \(error)")

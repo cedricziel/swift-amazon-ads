@@ -42,7 +42,7 @@ final class CampaignManagementTests: XCTestCase {
         XCTAssertEqual(decoded.name, campaign.name)
         XCTAssertEqual(decoded.state, .enabled)
         XCTAssertEqual(decoded.targetingType, .manual)
-        XCTAssertEqual(decoded.budget.amount, 50.00)
+        XCTAssertEqual(decoded.budget.budget, 50.00)
         XCTAssertEqual(decoded.startDate, "20250101")
         XCTAssertEqual(decoded.endDate, "20250331")
         XCTAssertEqual(decoded.premiumBidAdjustment, true)
@@ -72,25 +72,25 @@ final class CampaignManagementTests: XCTestCase {
     }
 
     func testCampaignStateEnumValues() {
-        XCTAssertEqual(CampaignState.enabled.rawValue, "enabled")
-        XCTAssertEqual(CampaignState.paused.rawValue, "paused")
-        XCTAssertEqual(CampaignState.archived.rawValue, "archived")
+        XCTAssertEqual(CampaignState.enabled.rawValue, "ENABLED")
+        XCTAssertEqual(CampaignState.paused.rawValue, "PAUSED")
+        XCTAssertEqual(CampaignState.archived.rawValue, "ARCHIVED")
     }
 
     func testTargetingTypeEnumValues() {
-        XCTAssertEqual(TargetingType.manual.rawValue, "manual")
-        XCTAssertEqual(TargetingType.auto.rawValue, "auto")
+        XCTAssertEqual(TargetingType.manual.rawValue, "MANUAL")
+        XCTAssertEqual(TargetingType.auto.rawValue, "AUTO")
     }
 
     func testBiddingStrategyEnumValues() {
-        XCTAssertEqual(BiddingStrategy.legacyForSales.rawValue, "legacyForSales")
-        XCTAssertEqual(BiddingStrategy.autoForSales.rawValue, "autoForSales")
-        XCTAssertEqual(BiddingStrategy.manual.rawValue, "manual")
+        XCTAssertEqual(BiddingStrategy.legacyForSales.rawValue, "LEGACY_FOR_SALES")
+        XCTAssertEqual(BiddingStrategy.autoForSales.rawValue, "AUTO_FOR_SALES")
+        XCTAssertEqual(BiddingStrategy.manual.rawValue, "MANUAL")
     }
 
     func testDailyBudgetConvenience() {
         let budget = SponsoredProductsCampaign.Budget.daily(100.50)
-        XCTAssertEqual(budget.amount, 100.50)
+        XCTAssertEqual(budget.budget, 100.50)
         XCTAssertEqual(budget.budgetType, .daily)
     }
 
@@ -119,9 +119,9 @@ final class CampaignManagementTests: XCTestCase {
     }
 
     func testAdGroupStateEnumValues() {
-        XCTAssertEqual(AdGroupState.enabled.rawValue, "enabled")
-        XCTAssertEqual(AdGroupState.paused.rawValue, "paused")
-        XCTAssertEqual(AdGroupState.archived.rawValue, "archived")
+        XCTAssertEqual(AdGroupState.enabled.rawValue, "ENABLED")
+        XCTAssertEqual(AdGroupState.paused.rawValue, "PAUSED")
+        XCTAssertEqual(AdGroupState.archived.rawValue, "ARCHIVED")
     }
 
     // MARK: - Product Ad Tests
@@ -151,9 +151,9 @@ final class CampaignManagementTests: XCTestCase {
     }
 
     func testProductAdStateEnumValues() {
-        XCTAssertEqual(ProductAdState.enabled.rawValue, "enabled")
-        XCTAssertEqual(ProductAdState.paused.rawValue, "paused")
-        XCTAssertEqual(ProductAdState.archived.rawValue, "archived")
+        XCTAssertEqual(ProductAdState.enabled.rawValue, "ENABLED")
+        XCTAssertEqual(ProductAdState.paused.rawValue, "PAUSED")
+        XCTAssertEqual(ProductAdState.archived.rawValue, "ARCHIVED")
     }
 
     // MARK: - Keyword Tests
@@ -185,20 +185,20 @@ final class CampaignManagementTests: XCTestCase {
     }
 
     func testKeywordMatchTypeEnumValues() {
-        XCTAssertEqual(KeywordMatchType.exact.rawValue, "exact")
-        XCTAssertEqual(KeywordMatchType.phrase.rawValue, "phrase")
-        XCTAssertEqual(KeywordMatchType.broad.rawValue, "broad")
+        XCTAssertEqual(KeywordMatchType.exact.rawValue, "EXACT")
+        XCTAssertEqual(KeywordMatchType.phrase.rawValue, "PHRASE")
+        XCTAssertEqual(KeywordMatchType.broad.rawValue, "BROAD")
     }
 
     func testKeywordStateEnumValues() {
-        XCTAssertEqual(KeywordState.enabled.rawValue, "enabled")
-        XCTAssertEqual(KeywordState.paused.rawValue, "paused")
-        XCTAssertEqual(KeywordState.archived.rawValue, "archived")
+        XCTAssertEqual(KeywordState.enabled.rawValue, "ENABLED")
+        XCTAssertEqual(KeywordState.paused.rawValue, "PAUSED")
+        XCTAssertEqual(KeywordState.archived.rawValue, "ARCHIVED")
     }
 
     func testNegativeKeywordMatchTypeEnumValues() {
-        XCTAssertEqual(NegativeKeywordMatchType.negativeExact.rawValue, "negativeExact")
-        XCTAssertEqual(NegativeKeywordMatchType.negativePhrase.rawValue, "negativePhrase")
+        XCTAssertEqual(NegativeKeywordMatchType.negativeExact.rawValue, "NEGATIVE_EXACT")
+        XCTAssertEqual(NegativeKeywordMatchType.negativePhrase.rawValue, "NEGATIVE_PHRASE")
     }
 
     // MARK: - Target Tests
@@ -248,14 +248,14 @@ final class CampaignManagementTests: XCTestCase {
     }
 
     func testTargetStateEnumValues() {
-        XCTAssertEqual(TargetState.enabled.rawValue, "enabled")
-        XCTAssertEqual(TargetState.paused.rawValue, "paused")
-        XCTAssertEqual(TargetState.archived.rawValue, "archived")
+        XCTAssertEqual(TargetState.enabled.rawValue, "ENABLED")
+        XCTAssertEqual(TargetState.paused.rawValue, "PAUSED")
+        XCTAssertEqual(TargetState.archived.rawValue, "ARCHIVED")
     }
 
     func testTargetExpressionTypeEnumValues() {
-        XCTAssertEqual(TargetExpressionType.manual.rawValue, "manual")
-        XCTAssertEqual(TargetExpressionType.auto.rawValue, "auto")
+        XCTAssertEqual(TargetExpressionType.manual.rawValue, "MANUAL")
+        XCTAssertEqual(TargetExpressionType.auto.rawValue, "AUTO")
     }
 
     // MARK: - Bid Adjustment Tests
@@ -274,8 +274,8 @@ final class CampaignManagementTests: XCTestCase {
     }
 
     func testPlacementPredicateEnumValues() {
-        XCTAssertEqual(PlacementPredicate.placementTop.rawValue, "placementTop")
-        XCTAssertEqual(PlacementPredicate.placementProductPage.rawValue, "placementProductPage")
+        XCTAssertEqual(PlacementPredicate.placementTop.rawValue, "PLACEMENT_TOP")
+        XCTAssertEqual(PlacementPredicate.placementProductPage.rawValue, "PLACEMENT_PRODUCT_PAGE")
     }
 
     // MARK: - Integration Tests
@@ -303,13 +303,13 @@ final class CampaignManagementTests: XCTestCase {
         encoder.outputFormatting = .prettyPrinted
         let data = try encoder.encode(campaign)
 
-        // Verify JSON structure
+        // Verify JSON structure (V3 API uses UPPERCASE enum values)
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         XCTAssertNotNil(json)
         XCTAssertEqual(json?["campaignId"] as? String, "C123")
         XCTAssertEqual(json?["name"] as? String, "Full Test Campaign")
-        XCTAssertEqual(json?["state"] as? String, "enabled")
-        XCTAssertEqual(json?["targetingType"] as? String, "manual")
+        XCTAssertEqual(json?["state"] as? String, "ENABLED")
+        XCTAssertEqual(json?["targetingType"] as? String, "MANUAL")
 
         // Decode and verify
         let decoder = JSONDecoder()

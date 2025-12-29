@@ -7,6 +7,69 @@
 
 import Foundation
 
+// MARK: - V3 API Response Types
+
+/// Response wrapper for target list endpoint
+public struct SPTargetListResponse: Codable, Sendable {
+    public let targetingClauses: [SponsoredProductsTarget]
+    public let nextToken: String?
+    public let totalResults: Int?
+
+    public init(targetingClauses: [SponsoredProductsTarget], nextToken: String? = nil, totalResults: Int? = nil) {
+        self.targetingClauses = targetingClauses
+        self.nextToken = nextToken
+        self.totalResults = totalResults
+    }
+}
+
+/// Batch response wrapper for target operations
+public struct SPTargetBatchResponse: Codable, Sendable {
+    public let targetingClauses: SPTargetBatchResult
+
+    public init(targetingClauses: SPTargetBatchResult) {
+        self.targetingClauses = targetingClauses
+    }
+}
+
+/// Batch result containing success and error items
+public struct SPTargetBatchResult: Codable, Sendable {
+    public let success: [SPTargetSuccessItem]
+    public let error: [SPTargetErrorItem]
+
+    public init(success: [SPTargetSuccessItem] = [], error: [SPTargetErrorItem] = []) {
+        self.success = success
+        self.error = error
+    }
+}
+
+/// Success item in batch response
+public struct SPTargetSuccessItem: Codable, Sendable {
+    public let targetingClause: SponsoredProductsTarget
+    public let targetId: String?
+    public let index: Int?
+
+    public init(targetingClause: SponsoredProductsTarget, targetId: String? = nil, index: Int? = nil) {
+        self.targetingClause = targetingClause
+        self.targetId = targetId
+        self.index = index
+    }
+}
+
+/// Error item in batch response
+public struct SPTargetErrorItem: Codable, Sendable {
+    public let targetId: String?
+    public let index: Int?
+    public let errors: [SPApiError]
+
+    public init(targetId: String? = nil, index: Int? = nil, errors: [SPApiError] = []) {
+        self.targetId = targetId
+        self.index = index
+        self.errors = errors
+    }
+}
+
+// MARK: - Target Entity
+
 /// Sponsored Products product/category targeting entity
 public struct SponsoredProductsTarget: Codable, Sendable, Identifiable {
     /// Amazon's target identifier (read-only, assigned by Amazon)
@@ -88,20 +151,20 @@ public struct TargetExpression: Codable, Sendable {
     }
 }
 
-/// Target expression type
+/// Target expression type (V3 API uses UPPERCASE)
 public enum TargetExpressionType: String, Codable, Sendable, CaseIterable {
     /// Manual targeting
-    case manual
+    case manual = "MANUAL"
 
     /// Automatic targeting
-    case auto
+    case auto = "AUTO"
 }
 
-/// Target state
+/// Target state (V3 API uses UPPERCASE)
 public enum TargetState: String, Codable, Sendable, CaseIterable {
-    case enabled
-    case paused
-    case archived
+    case enabled = "ENABLED"
+    case paused = "PAUSED"
+    case archived = "ARCHIVED"
 }
 
 // MARK: - Negative Targets
@@ -151,8 +214,8 @@ public struct SponsoredProductsNegativeTarget: Codable, Sendable, Identifiable {
     }
 }
 
-/// Negative target state
+/// Negative target state (V3 API uses UPPERCASE)
 public enum NegativeTargetState: String, Codable, Sendable, CaseIterable {
-    case enabled
-    case deleted
+    case enabled = "ENABLED"
+    case deleted = "DELETED"
 }

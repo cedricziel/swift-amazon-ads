@@ -72,7 +72,7 @@ final class CampaignCRUDTests: XCTestCase {
             name: name,
             state: .enabled,
             targetingType: .manual,
-            budget: SponsoredProductsCampaign.Budget(amount: 10.0, budgetType: .daily),
+            budget: SponsoredProductsCampaign.Budget(budget: 10.0, budgetType: .daily),
             startDate: "20250101",
             endDate: nil,
             premiumBidAdjustment: true,
@@ -87,17 +87,18 @@ final class CampaignCRUDTests: XCTestCase {
         let region = AmazonRegion.northAmerica
         let profileId = "PROFILE123"
 
-        // Mock successful campaigns response
+        // Mock successful V3 campaigns list response
         let campaigns = [mockCampaign(id: "CAMP1"), mockCampaign(id: "CAMP2")]
+        let listResponse = SPCampaignListResponse(campaigns: campaigns, nextToken: nil, totalResults: 2)
         MockURLProtocol.setRequestHandler { request in
-            if request.url?.path.contains("/sp/campaigns") == true {
+            if request.url?.path.contains("/sp/campaigns/list") == true {
                 // Verify headers
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer valid_access_token")
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Amazon-Advertising-API-ClientId"), "test_client_id")
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Amazon-Advertising-API-Scope"), profileId)
-                XCTAssertEqual(request.httpMethod, "GET")
+                XCTAssertEqual(request.httpMethod, "POST")
 
-                return .json(campaigns)
+                return .json(listResponse)
             }
             return .notFound()
         }
@@ -113,17 +114,21 @@ final class CampaignCRUDTests: XCTestCase {
         let region = AmazonRegion.northAmerica
         let profileId = "PROFILE123"
 
-        // Mock campaigns response
+        // Mock V3 campaigns response
         let campaigns = [mockCampaign()]
+        let listResponse = SPCampaignListResponse(campaigns: campaigns, nextToken: nil, totalResults: 1)
         MockURLProtocol.setRequestHandler { request in
-            if request.url?.path.contains("/sp/campaigns") == true {
-                // Verify state filter query parameter
-                let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)
-                let stateFilterParam = components?.queryItems?.first(where: { $0.name == "stateFilter" })
-                XCTAssertNotNil(stateFilterParam)
-                XCTAssertEqual(stateFilterParam?.value, "enabled,paused")
+            if request.url?.path.contains("/sp/campaigns/list") == true {
+                // Verify POST body contains state filter (V3 uses POST with JSON body)
+                XCTAssertEqual(request.httpMethod, "POST")
 
-                return .json(campaigns)
+                // Verify request body contains state filter
+                if let body = request.httpBody {
+                    let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any]
+                    XCTAssertNotNil(json?["stateFilter"])
+                }
+
+                return .json(listResponse)
             }
             return .notFound()
         }
@@ -143,7 +148,7 @@ final class CampaignCRUDTests: XCTestCase {
 
         // Mock 401 Unauthorized response
         MockURLProtocol.setRequestHandler { request in
-            if request.url?.path.contains("/sp/campaigns") == true {
+            if request.url?.path.contains("/sp/campaigns/list") == true {
                 return .unauthorized()
             }
             return .notFound()
@@ -153,7 +158,7 @@ final class CampaignCRUDTests: XCTestCase {
             _ = try await client.listCampaigns(profileId: profileId, region: region, stateFilter: nil)
             XCTFail("Should have thrown HTTP error")
         } catch let error as AmazonAdvertisingError {
-            if case .httpError(let statusCode) = error {
+            if case .httpError(let statusCode, _) = error {
                 XCTAssertEqual(statusCode, 401)
             } else {
                 XCTFail("Wrong error type: \(error)")
@@ -205,7 +210,7 @@ final class CampaignCRUDTests: XCTestCase {
             _ = try await client.getCampaign(campaignId: campaignId, profileId: profileId, region: region)
             XCTFail("Should have thrown 404 error")
         } catch let error as AmazonAdvertisingError {
-            if case .httpError(let statusCode) = error {
+            if case .httpError(let statusCode, _) = error {
                 XCTAssertEqual(statusCode, 404)
             } else {
                 XCTFail("Wrong error type: \(error)")
@@ -234,17 +239,21 @@ final class CampaignCRUDTests: XCTestCase {
             portfolioId: newCampaign.portfolioId
         )
 
-        // Response with generated ID
+        // Response with generated ID (V3 batch response format)
         let createdCampaign = mockCampaign(id: "NEWCAMP123", name: "New Campaign")
+        let successItem = SPCampaignSuccessItem(campaign: createdCampaign, campaignId: "NEWCAMP123", index: 0)
+        let batchResult = SPCampaignBatchResult(success: [successItem], error: [])
+        let batchResponse = SPCampaignBatchResponse(campaigns: batchResult)
 
         MockURLProtocol.setRequestHandler { request in
-            if request.url?.path.contains("/sp/campaigns") == true && request.httpMethod == "POST" {
-                // Verify headers
+            // V3 create uses the base /sp/campaigns endpoint with POST
+            if request.url?.path == "/sp/campaigns" && request.httpMethod == "POST" {
+                // Verify headers - V3 uses versioned Content-Type
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer valid_access_token")
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Amazon-Advertising-API-Scope"), profileId)
-                XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+                XCTAssertTrue(request.value(forHTTPHeaderField: "Content-Type")?.contains("spCampaign") == true)
 
-                return .json(createdCampaign, statusCode: 201)
+                return .json(batchResponse, statusCode: 207)
             }
             return .notFound()
         }
@@ -255,7 +264,7 @@ final class CampaignCRUDTests: XCTestCase {
         XCTAssertEqual(result.name, "New Campaign")
     }
 
-    func testCreateCampaignHandles200Response() async throws {
+    func testCreateCampaignHandles207Response() async throws {
         let region = AmazonRegion.northAmerica
         let profileId = "PROFILE123"
         let newCampaign = SponsoredProductsCampaign(
@@ -263,7 +272,7 @@ final class CampaignCRUDTests: XCTestCase {
             name: "Test",
             state: .enabled,
             targetingType: .manual,
-            budget: SponsoredProductsCampaign.Budget(amount: 10.0, budgetType: .daily),
+            budget: SponsoredProductsCampaign.Budget(budget: 10.0, budgetType: .daily),
             startDate: "20250101",
             endDate: nil,
             premiumBidAdjustment: nil,
@@ -271,12 +280,15 @@ final class CampaignCRUDTests: XCTestCase {
             portfolioId: nil
         )
 
-        // Some APIs return 200 instead of 201
+        // V3 API returns 207 Multi-Status with batch response
         let createdCampaign = mockCampaign(id: "NEWCAMP456")
+        let successItem = SPCampaignSuccessItem(campaign: createdCampaign, campaignId: "NEWCAMP456", index: 0)
+        let batchResult = SPCampaignBatchResult(success: [successItem], error: [])
+        let batchResponse = SPCampaignBatchResponse(campaigns: batchResult)
 
         MockURLProtocol.setRequestHandler { request in
-            if request.url?.path.contains("/sp/campaigns") == true && request.httpMethod == "POST" {
-                return .json(createdCampaign, statusCode: 200)
+            if request.url?.path == "/sp/campaigns" && request.httpMethod == "POST" {
+                return .json(batchResponse, statusCode: 207)
             }
             return .notFound()
         }
@@ -294,7 +306,7 @@ final class CampaignCRUDTests: XCTestCase {
             name: "",  // Invalid empty name
             state: .enabled,
             targetingType: .manual,
-            budget: SponsoredProductsCampaign.Budget(amount: 10.0, budgetType: .daily),
+            budget: SponsoredProductsCampaign.Budget(budget: 10.0, budgetType: .daily),
             startDate: "20250101",
             endDate: nil,
             premiumBidAdjustment: nil,
@@ -304,7 +316,7 @@ final class CampaignCRUDTests: XCTestCase {
 
         // Mock 400 Bad Request
         MockURLProtocol.setRequestHandler { request in
-            if request.url?.path.contains("/sp/campaigns") == true && request.httpMethod == "POST" {
+            if request.url?.path == "/sp/campaigns" && request.httpMethod == "POST" {
                 return .httpError(statusCode: 400)
             }
             return .notFound()
@@ -314,7 +326,7 @@ final class CampaignCRUDTests: XCTestCase {
             _ = try await client.createCampaign(campaign: newCampaign, profileId: profileId, region: region)
             XCTFail("Should have thrown validation error")
         } catch let error as AmazonAdvertisingError {
-            if case .httpError(let statusCode) = error {
+            if case .httpError(let statusCode, _) = error {
                 XCTAssertEqual(statusCode, 400)
             } else {
                 XCTFail("Wrong error type: \(error)")
@@ -330,16 +342,22 @@ final class CampaignCRUDTests: XCTestCase {
 
         // Campaign with updates
         var updatedCampaign = mockCampaign(id: "CAMPAIGN123", name: "Updated Name")
-        updatedCampaign.budget = SponsoredProductsCampaign.Budget(amount: 20.0, budgetType: .daily)
+        updatedCampaign.budget = SponsoredProductsCampaign.Budget(budget: 20.0, budgetType: .daily)
+
+        // V3 batch response
+        let successItem = SPCampaignSuccessItem(campaign: updatedCampaign, campaignId: "CAMPAIGN123", index: 0)
+        let batchResult = SPCampaignBatchResult(success: [successItem], error: [])
+        let batchResponse = SPCampaignBatchResponse(campaigns: batchResult)
 
         MockURLProtocol.setRequestHandler { request in
-            if request.url?.path.contains("/sp/campaigns/CAMPAIGN123") == true && request.httpMethod == "PUT" {
-                // Verify headers
+            // V3 update uses PUT to /sp/campaigns (no ID in path)
+            if request.url?.path == "/sp/campaigns" && request.httpMethod == "PUT" {
+                // Verify headers - V3 uses versioned Content-Type
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer valid_access_token")
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Amazon-Advertising-API-Scope"), profileId)
-                XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+                XCTAssertTrue(request.value(forHTTPHeaderField: "Content-Type")?.contains("spCampaign") == true)
 
-                return .json(updatedCampaign)
+                return .json(batchResponse, statusCode: 207)
             }
             return .notFound()
         }
@@ -348,7 +366,7 @@ final class CampaignCRUDTests: XCTestCase {
 
         XCTAssertEqual(result.campaignId, "CAMPAIGN123")
         XCTAssertEqual(result.name, "Updated Name")
-        XCTAssertEqual(result.budget.amount, 20.0)
+        XCTAssertEqual(result.budget.budget, 20.0)
     }
 
     func testUpdateCampaignRequiresCampaignId() async throws {
@@ -361,7 +379,7 @@ final class CampaignCRUDTests: XCTestCase {
             name: "Test",
             state: .enabled,
             targetingType: .manual,
-            budget: SponsoredProductsCampaign.Budget(amount: 10.0, budgetType: .daily),
+            budget: SponsoredProductsCampaign.Budget(budget: 10.0, budgetType: .daily),
             startDate: "20250101",
             endDate: nil,
             premiumBidAdjustment: nil,
@@ -388,7 +406,8 @@ final class CampaignCRUDTests: XCTestCase {
 
         // Mock 409 Conflict (concurrent modification)
         MockURLProtocol.setRequestHandler { request in
-            if request.url?.path.contains("/sp/campaigns/CAMPAIGN123") == true && request.httpMethod == "PUT" {
+            // V3 update uses PUT to /sp/campaigns (no ID in path)
+            if request.url?.path == "/sp/campaigns" && request.httpMethod == "PUT" {
                 return .httpError(statusCode: 409)
             }
             return .notFound()
@@ -398,7 +417,7 @@ final class CampaignCRUDTests: XCTestCase {
             _ = try await client.updateCampaign(campaign: campaign, profileId: profileId, region: region)
             XCTFail("Should have thrown conflict error")
         } catch let error as AmazonAdvertisingError {
-            if case .httpError(let statusCode) = error {
+            if case .httpError(let statusCode, _) = error {
                 XCTAssertEqual(statusCode, 409)
             } else {
                 XCTFail("Wrong error type: \(error)")
@@ -413,13 +432,20 @@ final class CampaignCRUDTests: XCTestCase {
         let profileId = "PROFILE123"
         let campaignId = "CAMPAIGN123"
 
+        // V3 returns batch response for delete
+        let deletedCampaign = mockCampaign(id: campaignId)
+        let successItem = SPCampaignSuccessItem(campaign: deletedCampaign, campaignId: campaignId, index: 0)
+        let batchResult = SPCampaignBatchResult(success: [successItem], error: [])
+        let batchResponse = SPCampaignBatchResponse(campaigns: batchResult)
+
         MockURLProtocol.setRequestHandler { request in
-            if request.url?.path.contains("/sp/campaigns/\(campaignId)") == true && request.httpMethod == "DELETE" {
+            // V3 archive uses POST to /sp/campaigns/delete with JSON body
+            if request.url?.path == "/sp/campaigns/delete" && request.httpMethod == "POST" {
                 // Verify headers
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer valid_access_token")
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Amazon-Advertising-API-Scope"), profileId)
 
-                return .success(data: Data(), statusCode: 200)
+                return .json(batchResponse, statusCode: 207)
             }
             return .notFound()
         }

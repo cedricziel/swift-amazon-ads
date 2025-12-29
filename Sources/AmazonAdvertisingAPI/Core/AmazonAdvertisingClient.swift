@@ -8,6 +8,40 @@
 import Foundation
 import CryptoKit
 
+// MARK: - Sponsored Products V3 API Media Types
+
+/// Versioned media types for Sponsored Products V3 API
+/// The V3 API requires specific Content-Type and Accept headers for each entity type
+public enum SPMediaType {
+    case campaign
+    case adGroup
+    case productAd
+    case keyword
+    case target
+    case campaignNegativeKeyword
+    case campaignNegativeTarget
+
+    /// The Content-Type/Accept header value for this entity type
+    public var headerValue: String {
+        switch self {
+        case .campaign:
+            return "application/vnd.spCampaign.v3+json"
+        case .adGroup:
+            return "application/vnd.spAdGroup.v3+json"
+        case .productAd:
+            return "application/vnd.spProductAd.v3+json"
+        case .keyword:
+            return "application/vnd.spKeyword.v3+json"
+        case .target:
+            return "application/vnd.spTargetingClause.v3+json"
+        case .campaignNegativeKeyword:
+            return "application/vnd.spCampaignNegativeKeyword.v3+json"
+        case .campaignNegativeTarget:
+            return "application/vnd.spCampaignNegativeTargetingClause.v3+json"
+        }
+    }
+}
+
 /// Main client for interacting with Amazon Advertising API
 public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
     private let clientId: String
@@ -433,17 +467,19 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
         request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // V3 API requires versioned Content-Type and Accept headers
+        request.setValue(SPMediaType.campaign.headerValue, forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.campaign.headerValue, forHTTPHeaderField: "Accept")
 
         // V3 API uses request body for filters instead of query parameters
+        // Even for list requests, we need to send a body (can be empty object)
+        var requestBody: [String: Any] = [:]
         if let stateFilter = stateFilter, !stateFilter.isEmpty {
-            let requestBody: [String: Any] = [
-                "stateFilter": [
-                    "include": stateFilter.map(\.rawValue)
-                ]
+            requestBody["stateFilter"] = [
+                "include": stateFilter.map(\.rawValue)
             ]
-            request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
         }
+        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
 
         let (data, response) = try await urlSession.data(for: request)
 
@@ -453,8 +489,9 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
 
         if httpResponse.statusCode == 200 {
             let decoder = JSONDecoder()
-            let campaigns = try decoder.decode([SponsoredProductsCampaign].self, from: data)
-            return campaigns
+            // V3 API returns a response object with campaigns array
+            let listResponse = try decoder.decode(SPCampaignListResponse.self, from: data)
+            return listResponse.campaigns
         } else {
             throw makeHTTPError(statusCode: httpResponse.statusCode, data: data)
         }
@@ -473,7 +510,8 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
         request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.campaign.headerValue, forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.campaign.headerValue, forHTTPHeaderField: "Accept")
 
         let (data, response) = try await urlSession.data(for: request)
 
@@ -485,7 +523,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             let decoder = JSONDecoder()
             return try decoder.decode(SponsoredProductsCampaign.self, from: data)
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
+            throw makeHTTPError(statusCode: httpResponse.statusCode, data: data)
         }
     }
 
@@ -502,10 +540,12 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
         request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.campaign.headerValue, forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.campaign.headerValue, forHTTPHeaderField: "Accept")
 
+        // V3 API expects array of campaigns
         let encoder = JSONEncoder()
-        request.httpBody = try encoder.encode(campaign)
+        request.httpBody = try encoder.encode(SPCampaignCreateRequest(campaigns: [campaign]))
 
         let (data, response) = try await urlSession.data(for: request)
 
@@ -513,11 +553,18 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             throw AmazonAdvertisingError.invalidResponse
         }
 
-        if httpResponse.statusCode == 200 || httpResponse.statusCode == 201 {
+        // V3 API returns 207 Multi-Status for batch operations
+        if httpResponse.statusCode == 200 || httpResponse.statusCode == 201 || httpResponse.statusCode == 207 {
             let decoder = JSONDecoder()
-            return try decoder.decode(SponsoredProductsCampaign.self, from: data)
+            let batchResponse = try decoder.decode(SPCampaignBatchResponse.self, from: data)
+            if let successItem = batchResponse.campaigns.success.first {
+                return successItem.campaign
+            } else if let errorItem = batchResponse.campaigns.error.first {
+                throw AmazonAdvertisingError.apiError(errorItem.errors.map(\.message).joined(separator: ", "))
+            }
+            throw AmazonAdvertisingError.invalidResponse
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
+            throw makeHTTPError(statusCode: httpResponse.statusCode, data: data)
         }
     }
 
@@ -526,22 +573,24 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         profileId: String,
         region: AmazonRegion
     ) async throws -> SponsoredProductsCampaign {
-        guard let campaignId = campaign.campaignId else {
+        guard campaign.campaignId != nil else {
             throw AmazonAdvertisingError.invalidRequest("Campaign ID is required for update")
         }
 
         let accessToken = try await getAccessToken(for: region)
-        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/campaigns/\(campaignId)")
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/campaigns")
 
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
         request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.campaign.headerValue, forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.campaign.headerValue, forHTTPHeaderField: "Accept")
 
+        // V3 API expects array of campaigns
         let encoder = JSONEncoder()
-        request.httpBody = try encoder.encode(campaign)
+        request.httpBody = try encoder.encode(SPCampaignUpdateRequest(campaigns: [campaign]))
 
         let (data, response) = try await urlSession.data(for: request)
 
@@ -549,11 +598,17 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             throw AmazonAdvertisingError.invalidResponse
         }
 
-        if httpResponse.statusCode == 200 {
+        if httpResponse.statusCode == 200 || httpResponse.statusCode == 207 {
             let decoder = JSONDecoder()
-            return try decoder.decode(SponsoredProductsCampaign.self, from: data)
+            let batchResponse = try decoder.decode(SPCampaignBatchResponse.self, from: data)
+            if let successItem = batchResponse.campaigns.success.first {
+                return successItem.campaign
+            } else if let errorItem = batchResponse.campaigns.error.first {
+                throw AmazonAdvertisingError.apiError(errorItem.errors.map(\.message).joined(separator: ", "))
+            }
+            throw AmazonAdvertisingError.invalidResponse
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
+            throw makeHTTPError(statusCode: httpResponse.statusCode, data: data)
         }
     }
 
@@ -563,22 +618,30 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         region: AmazonRegion
     ) async throws {
         let accessToken = try await getAccessToken(for: region)
-        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/campaigns/\(campaignId)")
+        // V3 API uses POST /sp/campaigns/delete for deletion
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/campaigns/delete")
 
         var request = URLRequest(url: url)
-        request.httpMethod = "DELETE"
+        request.httpMethod = "POST"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
         request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
+        request.setValue(SPMediaType.campaign.headerValue, forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.campaign.headerValue, forHTTPHeaderField: "Accept")
 
-        let (_, response) = try await urlSession.data(for: request)
+        // V3 API expects object with campaignIdFilter
+        let deleteRequest = SPCampaignDeleteRequest(campaignIdFilter: SPIdFilter(include: [campaignId]))
+        let encoder = JSONEncoder()
+        request.httpBody = try encoder.encode(deleteRequest)
+
+        let (data, response) = try await urlSession.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AmazonAdvertisingError.invalidResponse
         }
 
-        if httpResponse.statusCode != 200 && httpResponse.statusCode != 204 {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
+        if httpResponse.statusCode != 200 && httpResponse.statusCode != 207 {
+            throw makeHTTPError(statusCode: httpResponse.statusCode, data: data)
         }
     }
 
@@ -591,29 +654,26 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         stateFilter: [AdGroupState]?
     ) async throws -> [SponsoredProductsAdGroup] {
         let accessToken = try await getAccessToken(for: region)
-        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/adGroups")
+        // V3 API uses POST /sp/adGroups/list
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/adGroups/list")
 
         var request = URLRequest(url: url)
-        request.httpMethod = "GET"
+        request.httpMethod = "POST"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
         request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.adGroup.headerValue, forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.adGroup.headerValue, forHTTPHeaderField: "Accept")
 
-        // Add filters as query parameters
-        var queryItems: [URLQueryItem] = []
+        // V3 API uses request body for filters
+        var requestBody: [String: Any] = [:]
         if let campaignId = campaignId {
-            queryItems.append(URLQueryItem(name: "campaignIdFilter", value: campaignId))
+            requestBody["campaignIdFilter"] = ["include": [campaignId]]
         }
         if let stateFilter = stateFilter, !stateFilter.isEmpty {
-            queryItems.append(URLQueryItem(name: "stateFilter", value: stateFilter.map(\.rawValue).joined(separator: ",")))
+            requestBody["stateFilter"] = ["include": stateFilter.map(\.rawValue)]
         }
-
-        if !queryItems.isEmpty {
-            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
-            components.queryItems = queryItems
-            request.url = components.url
-        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
 
         let (data, response) = try await urlSession.data(for: request)
 
@@ -623,9 +683,10 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
 
         if httpResponse.statusCode == 200 {
             let decoder = JSONDecoder()
-            return try decoder.decode([SponsoredProductsAdGroup].self, from: data)
+            let listResponse = try decoder.decode(SPAdGroupListResponse.self, from: data)
+            return listResponse.adGroups
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
+            throw makeHTTPError(statusCode: httpResponse.statusCode, data: data)
         }
     }
 
@@ -642,7 +703,8 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
         request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.adGroup.headerValue, forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.adGroup.headerValue, forHTTPHeaderField: "Accept")
 
         let (data, response) = try await urlSession.data(for: request)
 
@@ -654,7 +716,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             let decoder = JSONDecoder()
             return try decoder.decode(SponsoredProductsAdGroup.self, from: data)
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
+            throw makeHTTPError(statusCode: httpResponse.statusCode, data: data)
         }
     }
 
@@ -671,10 +733,11 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
         request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.adGroup.headerValue, forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.adGroup.headerValue, forHTTPHeaderField: "Accept")
 
         let encoder = JSONEncoder()
-        request.httpBody = try encoder.encode(adGroup)
+        request.httpBody = try encoder.encode(["adGroups": [adGroup]])
 
         let (data, response) = try await urlSession.data(for: request)
 
@@ -682,11 +745,17 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             throw AmazonAdvertisingError.invalidResponse
         }
 
-        if httpResponse.statusCode == 200 || httpResponse.statusCode == 201 {
+        if httpResponse.statusCode == 200 || httpResponse.statusCode == 201 || httpResponse.statusCode == 207 {
             let decoder = JSONDecoder()
-            return try decoder.decode(SponsoredProductsAdGroup.self, from: data)
+            let batchResponse = try decoder.decode(SPAdGroupBatchResponse.self, from: data)
+            if let successItem = batchResponse.adGroups.success.first {
+                return successItem.adGroup
+            } else if let errorItem = batchResponse.adGroups.error.first {
+                throw AmazonAdvertisingError.apiError(errorItem.errors.map(\.message).joined(separator: ", "))
+            }
+            throw AmazonAdvertisingError.invalidResponse
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
+            throw makeHTTPError(statusCode: httpResponse.statusCode, data: data)
         }
     }
 
@@ -695,22 +764,23 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         profileId: String,
         region: AmazonRegion
     ) async throws -> SponsoredProductsAdGroup {
-        guard let adGroupId = adGroup.adGroupId else {
+        guard adGroup.adGroupId != nil else {
             throw AmazonAdvertisingError.invalidRequest("Ad Group ID is required for update")
         }
 
         let accessToken = try await getAccessToken(for: region)
-        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/adGroups/\(adGroupId)")
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/adGroups")
 
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
         request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.adGroup.headerValue, forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.adGroup.headerValue, forHTTPHeaderField: "Accept")
 
         let encoder = JSONEncoder()
-        request.httpBody = try encoder.encode(adGroup)
+        request.httpBody = try encoder.encode(["adGroups": [adGroup]])
 
         let (data, response) = try await urlSession.data(for: request)
 
@@ -718,11 +788,17 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             throw AmazonAdvertisingError.invalidResponse
         }
 
-        if httpResponse.statusCode == 200 {
+        if httpResponse.statusCode == 200 || httpResponse.statusCode == 207 {
             let decoder = JSONDecoder()
-            return try decoder.decode(SponsoredProductsAdGroup.self, from: data)
+            let batchResponse = try decoder.decode(SPAdGroupBatchResponse.self, from: data)
+            if let successItem = batchResponse.adGroups.success.first {
+                return successItem.adGroup
+            } else if let errorItem = batchResponse.adGroups.error.first {
+                throw AmazonAdvertisingError.apiError(errorItem.errors.map(\.message).joined(separator: ", "))
+            }
+            throw AmazonAdvertisingError.invalidResponse
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
+            throw makeHTTPError(statusCode: httpResponse.statusCode, data: data)
         }
     }
 
@@ -732,22 +808,28 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         region: AmazonRegion
     ) async throws {
         let accessToken = try await getAccessToken(for: region)
-        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/adGroups/\(adGroupId)")
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/adGroups/delete")
 
         var request = URLRequest(url: url)
-        request.httpMethod = "DELETE"
+        request.httpMethod = "POST"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
         request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
+        request.setValue(SPMediaType.adGroup.headerValue, forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.adGroup.headerValue, forHTTPHeaderField: "Accept")
 
-        let (_, response) = try await urlSession.data(for: request)
+        let deleteRequest = ["adGroupIdFilter": ["include": [adGroupId]]]
+        let encoder = JSONEncoder()
+        request.httpBody = try encoder.encode(deleteRequest)
+
+        let (data, response) = try await urlSession.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AmazonAdvertisingError.invalidResponse
         }
 
-        if httpResponse.statusCode != 200 && httpResponse.statusCode != 204 {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
+        if httpResponse.statusCode != 200 && httpResponse.statusCode != 207 {
+            throw makeHTTPError(statusCode: httpResponse.statusCode, data: data)
         }
     }
 
@@ -760,28 +842,29 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         stateFilter: [ProductAdState]?
     ) async throws -> [SponsoredProductsProductAd] {
         let accessToken = try await getAccessToken(for: region)
-        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/productAds")
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/productAds/list")
 
         var request = URLRequest(url: url)
-        request.httpMethod = "GET"
+        request.httpMethod = "POST"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
         request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.productAd.headerValue, forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.productAd.headerValue, forHTTPHeaderField: "Accept")
 
-        // Add filters as query parameters
-        var queryItems: [URLQueryItem] = []
+        // Build request body with filters
+        var requestBody: [String: Any] = [:]
         if let adGroupId = adGroupId {
-            queryItems.append(URLQueryItem(name: "adGroupIdFilter", value: adGroupId))
+            requestBody["adGroupIdFilter"] = ["include": [adGroupId]]
         }
         if let stateFilter = stateFilter, !stateFilter.isEmpty {
-            queryItems.append(URLQueryItem(name: "stateFilter", value: stateFilter.map(\.rawValue).joined(separator: ",")))
+            requestBody["stateFilter"] = ["include": stateFilter.map(\.rawValue)]
         }
 
-        if !queryItems.isEmpty {
-            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
-            components.queryItems = queryItems
-            request.url = components.url
+        if !requestBody.isEmpty {
+            request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+        } else {
+            request.httpBody = "{}".data(using: .utf8)
         }
 
         let (data, response) = try await urlSession.data(for: request)
@@ -792,9 +875,10 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
 
         if httpResponse.statusCode == 200 {
             let decoder = JSONDecoder()
-            return try decoder.decode([SponsoredProductsProductAd].self, from: data)
+            let listResponse = try decoder.decode(SPProductAdListResponse.self, from: data)
+            return listResponse.productAds
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
+            throw makeHTTPError(statusCode: httpResponse.statusCode, data: data)
         }
     }
 
@@ -811,10 +895,13 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
         request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.productAd.headerValue, forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.productAd.headerValue, forHTTPHeaderField: "Accept")
 
+        // V3 API expects batch request
+        let createRequest = ["productAds": [productAd]]
         let encoder = JSONEncoder()
-        request.httpBody = try encoder.encode(productAd)
+        request.httpBody = try encoder.encode(createRequest)
 
         let (data, response) = try await urlSession.data(for: request)
 
@@ -822,11 +909,18 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             throw AmazonAdvertisingError.invalidResponse
         }
 
-        if httpResponse.statusCode == 200 || httpResponse.statusCode == 201 {
+        // V3 API returns 207 Multi-Status for batch operations
+        if httpResponse.statusCode == 200 || httpResponse.statusCode == 207 {
             let decoder = JSONDecoder()
-            return try decoder.decode(SponsoredProductsProductAd.self, from: data)
+            let batchResponse = try decoder.decode(SPProductAdBatchResponse.self, from: data)
+            if let successItem = batchResponse.productAds.success.first {
+                return successItem.productAd
+            } else if let errorItem = batchResponse.productAds.error.first {
+                throw AmazonAdvertisingError.apiError(errorItem.errors.first?.message ?? "Unknown error")
+            }
+            throw AmazonAdvertisingError.invalidResponse
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
+            throw makeHTTPError(statusCode: httpResponse.statusCode, data: data)
         }
     }
 
@@ -835,22 +929,25 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         profileId: String,
         region: AmazonRegion
     ) async throws -> SponsoredProductsProductAd {
-        guard let adId = productAd.adId else {
+        guard productAd.adId != nil else {
             throw AmazonAdvertisingError.invalidRequest("Product Ad ID is required for update")
         }
 
         let accessToken = try await getAccessToken(for: region)
-        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/productAds/\(adId)")
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/productAds")
 
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
         request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.productAd.headerValue, forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.productAd.headerValue, forHTTPHeaderField: "Accept")
 
+        // V3 API expects batch request
+        let updateRequest = ["productAds": [productAd]]
         let encoder = JSONEncoder()
-        request.httpBody = try encoder.encode(productAd)
+        request.httpBody = try encoder.encode(updateRequest)
 
         let (data, response) = try await urlSession.data(for: request)
 
@@ -858,11 +955,18 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             throw AmazonAdvertisingError.invalidResponse
         }
 
-        if httpResponse.statusCode == 200 {
+        // V3 API returns 207 Multi-Status for batch operations
+        if httpResponse.statusCode == 200 || httpResponse.statusCode == 207 {
             let decoder = JSONDecoder()
-            return try decoder.decode(SponsoredProductsProductAd.self, from: data)
+            let batchResponse = try decoder.decode(SPProductAdBatchResponse.self, from: data)
+            if let successItem = batchResponse.productAds.success.first {
+                return successItem.productAd
+            } else if let errorItem = batchResponse.productAds.error.first {
+                throw AmazonAdvertisingError.apiError(errorItem.errors.first?.message ?? "Unknown error")
+            }
+            throw AmazonAdvertisingError.invalidResponse
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
+            throw makeHTTPError(statusCode: httpResponse.statusCode, data: data)
         }
     }
 
@@ -872,22 +976,28 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         region: AmazonRegion
     ) async throws {
         let accessToken = try await getAccessToken(for: region)
-        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/productAds/\(adId)")
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/productAds/delete")
 
         var request = URLRequest(url: url)
-        request.httpMethod = "DELETE"
+        request.httpMethod = "POST"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
         request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
+        request.setValue(SPMediaType.productAd.headerValue, forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.productAd.headerValue, forHTTPHeaderField: "Accept")
 
-        let (_, response) = try await urlSession.data(for: request)
+        // V3 API expects delete request with filter
+        let deleteRequest = ["adIdFilter": ["include": [adId]]]
+        request.httpBody = try JSONSerialization.data(withJSONObject: deleteRequest)
+
+        let (data, response) = try await urlSession.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AmazonAdvertisingError.invalidResponse
         }
 
-        if httpResponse.statusCode != 200 && httpResponse.statusCode != 204 {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
+        if httpResponse.statusCode != 200 && httpResponse.statusCode != 207 {
+            throw makeHTTPError(statusCode: httpResponse.statusCode, data: data)
         }
     }
 
@@ -900,28 +1010,29 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         stateFilter: [KeywordState]?
     ) async throws -> [SponsoredProductsKeyword] {
         let accessToken = try await getAccessToken(for: region)
-        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/keywords")
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/keywords/list")
 
         var request = URLRequest(url: url)
-        request.httpMethod = "GET"
+        request.httpMethod = "POST"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
         request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.keyword.headerValue, forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.keyword.headerValue, forHTTPHeaderField: "Accept")
 
-        // Add filters as query parameters
-        var queryItems: [URLQueryItem] = []
+        // Build request body with filters
+        var requestBody: [String: Any] = [:]
         if let adGroupId = adGroupId {
-            queryItems.append(URLQueryItem(name: "adGroupIdFilter", value: adGroupId))
+            requestBody["adGroupIdFilter"] = ["include": [adGroupId]]
         }
         if let stateFilter = stateFilter, !stateFilter.isEmpty {
-            queryItems.append(URLQueryItem(name: "stateFilter", value: stateFilter.map(\.rawValue).joined(separator: ",")))
+            requestBody["stateFilter"] = ["include": stateFilter.map(\.rawValue)]
         }
 
-        if !queryItems.isEmpty {
-            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
-            components.queryItems = queryItems
-            request.url = components.url
+        if !requestBody.isEmpty {
+            request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+        } else {
+            request.httpBody = "{}".data(using: .utf8)
         }
 
         let (data, response) = try await urlSession.data(for: request)
@@ -932,9 +1043,10 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
 
         if httpResponse.statusCode == 200 {
             let decoder = JSONDecoder()
-            return try decoder.decode([SponsoredProductsKeyword].self, from: data)
+            let listResponse = try decoder.decode(SPKeywordListResponse.self, from: data)
+            return listResponse.keywords
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
+            throw makeHTTPError(statusCode: httpResponse.statusCode, data: data)
         }
     }
 
@@ -951,10 +1063,13 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
         request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.keyword.headerValue, forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.keyword.headerValue, forHTTPHeaderField: "Accept")
 
+        // V3 API expects batch request
+        let createRequest = ["keywords": [keyword]]
         let encoder = JSONEncoder()
-        request.httpBody = try encoder.encode(keyword)
+        request.httpBody = try encoder.encode(createRequest)
 
         let (data, response) = try await urlSession.data(for: request)
 
@@ -962,11 +1077,18 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             throw AmazonAdvertisingError.invalidResponse
         }
 
-        if httpResponse.statusCode == 200 || httpResponse.statusCode == 201 {
+        // V3 API returns 207 Multi-Status for batch operations
+        if httpResponse.statusCode == 200 || httpResponse.statusCode == 207 {
             let decoder = JSONDecoder()
-            return try decoder.decode(SponsoredProductsKeyword.self, from: data)
+            let batchResponse = try decoder.decode(SPKeywordBatchResponse.self, from: data)
+            if let successItem = batchResponse.keywords.success.first {
+                return successItem.keyword
+            } else if let errorItem = batchResponse.keywords.error.first {
+                throw AmazonAdvertisingError.apiError(errorItem.errors.first?.message ?? "Unknown error")
+            }
+            throw AmazonAdvertisingError.invalidResponse
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
+            throw makeHTTPError(statusCode: httpResponse.statusCode, data: data)
         }
     }
 
@@ -975,22 +1097,25 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         profileId: String,
         region: AmazonRegion
     ) async throws -> SponsoredProductsKeyword {
-        guard let keywordId = keyword.keywordId else {
+        guard keyword.keywordId != nil else {
             throw AmazonAdvertisingError.invalidRequest("Keyword ID is required for update")
         }
 
         let accessToken = try await getAccessToken(for: region)
-        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/keywords/\(keywordId)")
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/keywords")
 
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
         request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.keyword.headerValue, forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.keyword.headerValue, forHTTPHeaderField: "Accept")
 
+        // V3 API expects batch request
+        let updateRequest = ["keywords": [keyword]]
         let encoder = JSONEncoder()
-        request.httpBody = try encoder.encode(keyword)
+        request.httpBody = try encoder.encode(updateRequest)
 
         let (data, response) = try await urlSession.data(for: request)
 
@@ -998,11 +1123,18 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             throw AmazonAdvertisingError.invalidResponse
         }
 
-        if httpResponse.statusCode == 200 {
+        // V3 API returns 207 Multi-Status for batch operations
+        if httpResponse.statusCode == 200 || httpResponse.statusCode == 207 {
             let decoder = JSONDecoder()
-            return try decoder.decode(SponsoredProductsKeyword.self, from: data)
+            let batchResponse = try decoder.decode(SPKeywordBatchResponse.self, from: data)
+            if let successItem = batchResponse.keywords.success.first {
+                return successItem.keyword
+            } else if let errorItem = batchResponse.keywords.error.first {
+                throw AmazonAdvertisingError.apiError(errorItem.errors.first?.message ?? "Unknown error")
+            }
+            throw AmazonAdvertisingError.invalidResponse
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
+            throw makeHTTPError(statusCode: httpResponse.statusCode, data: data)
         }
     }
 
@@ -1012,22 +1144,28 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         region: AmazonRegion
     ) async throws {
         let accessToken = try await getAccessToken(for: region)
-        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/keywords/\(keywordId)")
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/keywords/delete")
 
         var request = URLRequest(url: url)
-        request.httpMethod = "DELETE"
+        request.httpMethod = "POST"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
         request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
+        request.setValue(SPMediaType.keyword.headerValue, forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.keyword.headerValue, forHTTPHeaderField: "Accept")
 
-        let (_, response) = try await urlSession.data(for: request)
+        // V3 API expects delete request with filter
+        let deleteRequest = ["keywordIdFilter": ["include": [keywordId]]]
+        request.httpBody = try JSONSerialization.data(withJSONObject: deleteRequest)
+
+        let (data, response) = try await urlSession.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AmazonAdvertisingError.invalidResponse
         }
 
-        if httpResponse.statusCode != 200 && httpResponse.statusCode != 204 {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
+        if httpResponse.statusCode != 200 && httpResponse.statusCode != 207 {
+            throw makeHTTPError(statusCode: httpResponse.statusCode, data: data)
         }
     }
 
@@ -1040,28 +1178,29 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         stateFilter: [TargetState]?
     ) async throws -> [SponsoredProductsTarget] {
         let accessToken = try await getAccessToken(for: region)
-        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/targets")
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/targets/list")
 
         var request = URLRequest(url: url)
-        request.httpMethod = "GET"
+        request.httpMethod = "POST"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
         request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.target.headerValue, forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.target.headerValue, forHTTPHeaderField: "Accept")
 
-        // Add filters as query parameters
-        var queryItems: [URLQueryItem] = []
+        // Build request body with filters
+        var requestBody: [String: Any] = [:]
         if let adGroupId = adGroupId {
-            queryItems.append(URLQueryItem(name: "adGroupIdFilter", value: adGroupId))
+            requestBody["adGroupIdFilter"] = ["include": [adGroupId]]
         }
         if let stateFilter = stateFilter, !stateFilter.isEmpty {
-            queryItems.append(URLQueryItem(name: "stateFilter", value: stateFilter.map(\.rawValue).joined(separator: ",")))
+            requestBody["stateFilter"] = ["include": stateFilter.map(\.rawValue)]
         }
 
-        if !queryItems.isEmpty {
-            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
-            components.queryItems = queryItems
-            request.url = components.url
+        if !requestBody.isEmpty {
+            request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+        } else {
+            request.httpBody = "{}".data(using: .utf8)
         }
 
         let (data, response) = try await urlSession.data(for: request)
@@ -1072,9 +1211,10 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
 
         if httpResponse.statusCode == 200 {
             let decoder = JSONDecoder()
-            return try decoder.decode([SponsoredProductsTarget].self, from: data)
+            let listResponse = try decoder.decode(SPTargetListResponse.self, from: data)
+            return listResponse.targetingClauses
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
+            throw makeHTTPError(statusCode: httpResponse.statusCode, data: data)
         }
     }
 
@@ -1091,10 +1231,13 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
         request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.target.headerValue, forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.target.headerValue, forHTTPHeaderField: "Accept")
 
+        // V3 API expects batch request
+        let createRequest = ["targetingClauses": [target]]
         let encoder = JSONEncoder()
-        request.httpBody = try encoder.encode(target)
+        request.httpBody = try encoder.encode(createRequest)
 
         let (data, response) = try await urlSession.data(for: request)
 
@@ -1102,11 +1245,18 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             throw AmazonAdvertisingError.invalidResponse
         }
 
-        if httpResponse.statusCode == 200 || httpResponse.statusCode == 201 {
+        // V3 API returns 207 Multi-Status for batch operations
+        if httpResponse.statusCode == 200 || httpResponse.statusCode == 207 {
             let decoder = JSONDecoder()
-            return try decoder.decode(SponsoredProductsTarget.self, from: data)
+            let batchResponse = try decoder.decode(SPTargetBatchResponse.self, from: data)
+            if let successItem = batchResponse.targetingClauses.success.first {
+                return successItem.targetingClause
+            } else if let errorItem = batchResponse.targetingClauses.error.first {
+                throw AmazonAdvertisingError.apiError(errorItem.errors.first?.message ?? "Unknown error")
+            }
+            throw AmazonAdvertisingError.invalidResponse
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
+            throw makeHTTPError(statusCode: httpResponse.statusCode, data: data)
         }
     }
 
@@ -1115,22 +1265,25 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         profileId: String,
         region: AmazonRegion
     ) async throws -> SponsoredProductsTarget {
-        guard let targetId = target.targetId else {
+        guard target.targetId != nil else {
             throw AmazonAdvertisingError.invalidRequest("Target ID is required for update")
         }
 
         let accessToken = try await getAccessToken(for: region)
-        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/targets/\(targetId)")
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/targets")
 
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
         request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.target.headerValue, forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.target.headerValue, forHTTPHeaderField: "Accept")
 
+        // V3 API expects batch request
+        let updateRequest = ["targetingClauses": [target]]
         let encoder = JSONEncoder()
-        request.httpBody = try encoder.encode(target)
+        request.httpBody = try encoder.encode(updateRequest)
 
         let (data, response) = try await urlSession.data(for: request)
 
@@ -1138,11 +1291,18 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
             throw AmazonAdvertisingError.invalidResponse
         }
 
-        if httpResponse.statusCode == 200 {
+        // V3 API returns 207 Multi-Status for batch operations
+        if httpResponse.statusCode == 200 || httpResponse.statusCode == 207 {
             let decoder = JSONDecoder()
-            return try decoder.decode(SponsoredProductsTarget.self, from: data)
+            let batchResponse = try decoder.decode(SPTargetBatchResponse.self, from: data)
+            if let successItem = batchResponse.targetingClauses.success.first {
+                return successItem.targetingClause
+            } else if let errorItem = batchResponse.targetingClauses.error.first {
+                throw AmazonAdvertisingError.apiError(errorItem.errors.first?.message ?? "Unknown error")
+            }
+            throw AmazonAdvertisingError.invalidResponse
         } else {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
+            throw makeHTTPError(statusCode: httpResponse.statusCode, data: data)
         }
     }
 
@@ -1152,22 +1312,28 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
         region: AmazonRegion
     ) async throws {
         let accessToken = try await getAccessToken(for: region)
-        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/targets/\(targetId)")
+        let url = region.advertisingAPIBaseURL.appendingPathComponent("/sp/targets/delete")
 
         var request = URLRequest(url: url)
-        request.httpMethod = "DELETE"
+        request.httpMethod = "POST"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue(clientId, forHTTPHeaderField: "Amazon-Advertising-API-ClientId")
         request.setValue(profileId, forHTTPHeaderField: "Amazon-Advertising-API-Scope")
+        request.setValue(SPMediaType.target.headerValue, forHTTPHeaderField: "Content-Type")
+        request.setValue(SPMediaType.target.headerValue, forHTTPHeaderField: "Accept")
 
-        let (_, response) = try await urlSession.data(for: request)
+        // V3 API expects delete request with filter
+        let deleteRequest = ["targetIdFilter": ["include": [targetId]]]
+        request.httpBody = try JSONSerialization.data(withJSONObject: deleteRequest)
+
+        let (data, response) = try await urlSession.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AmazonAdvertisingError.invalidResponse
         }
 
-        if httpResponse.statusCode != 200 && httpResponse.statusCode != 204 {
-            throw AmazonAdvertisingError.httpError(httpResponse.statusCode, responseBody: nil)
+        if httpResponse.statusCode != 200 && httpResponse.statusCode != 207 {
+            throw makeHTTPError(statusCode: httpResponse.statusCode, data: data)
         }
     }
 

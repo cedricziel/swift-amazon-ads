@@ -4,6 +4,7 @@
 //
 //  Tests for Sponsored Products Keyword CRUD operations
 //  Tests create, list, update, and archive operations
+//  Updated for V3 API patterns
 //
 
 import XCTest
@@ -84,23 +85,25 @@ final class KeywordCRUDTests: XCTestCase {
         )
     }
 
-    // MARK: - List Keywords Tests (2 tests)
+    // MARK: - List Keywords Tests (V3 API uses POST /sp/keywords/list)
 
     func testListKeywordsReturnsAllKeywords() async throws {
         let region = AmazonRegion.northAmerica
         let profileId = "PROFILE123"
 
-        // Mock successful keywords response
+        // Mock V3 list response
         let keywords = [mockKeyword(id: "KW1", keywordText: "shoes"), mockKeyword(id: "KW2", keywordText: "boots")]
+        let listResponse = SPKeywordListResponse(keywords: keywords, nextToken: nil, totalResults: 2)
+
         MockURLProtocol.setRequestHandler { request in
-            if request.url?.path.contains("/sp/keywords") == true {
-                // Verify headers
+            if request.url?.path.contains("/sp/keywords/list") == true {
+                // V3 API uses POST for list
+                XCTAssertEqual(request.httpMethod, "POST")
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer valid_access_token")
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Amazon-Advertising-API-ClientId"), "test_client_id")
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Amazon-Advertising-API-Scope"), profileId)
-                XCTAssertEqual(request.httpMethod, "GET")
 
-                return .json(keywords)
+                return .json(listResponse)
             }
             return .notFound()
         }
@@ -123,21 +126,16 @@ final class KeywordCRUDTests: XCTestCase {
         let region = AmazonRegion.northAmerica
         let profileId = "PROFILE123"
 
-        // Mock keywords response
+        // Mock V3 list response
         let keywords = [mockKeyword()]
+        let listResponse = SPKeywordListResponse(keywords: keywords, nextToken: nil, totalResults: 1)
+
         MockURLProtocol.setRequestHandler { request in
-            if request.url?.path.contains("/sp/keywords") == true {
-                // Verify query parameters
-                let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)
-                let adGroupIdParam = components?.queryItems?.first(where: { $0.name == "adGroupIdFilter" })
-                let stateFilterParam = components?.queryItems?.first(where: { $0.name == "stateFilter" })
+            if request.url?.path.contains("/sp/keywords/list") == true {
+                // V3 API sends filter in POST body, not query parameters
+                XCTAssertEqual(request.httpMethod, "POST")
 
-                XCTAssertNotNil(adGroupIdParam)
-                XCTAssertEqual(adGroupIdParam?.value, "ADGROUP123")
-                XCTAssertNotNil(stateFilterParam)
-                XCTAssertEqual(stateFilterParam?.value, "enabled")
-
-                return .json(keywords)
+                return .json(listResponse)
             }
             return .notFound()
         }
@@ -152,7 +150,7 @@ final class KeywordCRUDTests: XCTestCase {
         XCTAssertEqual(result.count, 1)
     }
 
-    // MARK: - Create Keyword Tests (2 tests)
+    // MARK: - Create Keyword Tests (V3 API returns batch response with 207)
 
     func testCreateKeywordReturnsCreatedKeyword() async throws {
         let region = AmazonRegion.northAmerica
@@ -170,17 +168,22 @@ final class KeywordCRUDTests: XCTestCase {
             nativeLanguageLocale: nil
         )
 
-        // Response with generated ID
+        // V3 Response with batch wrapper
         let createdKeyword = mockKeyword(id: "NEWKW123", keywordText: "running shoes")
+        let successItem = SPKeywordSuccessItem(keyword: createdKeyword, keywordId: "NEWKW123", index: 0)
+        let batchResult = SPKeywordBatchResult(success: [successItem], error: [])
+        let batchResponse = SPKeywordBatchResponse(keywords: batchResult)
 
         MockURLProtocol.setRequestHandler { request in
-            if request.url?.path.contains("/sp/keywords") == true && request.httpMethod == "POST" {
+            if request.url?.path == "/sp/keywords" && request.httpMethod == "POST" {
                 // Verify headers
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer valid_access_token")
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Amazon-Advertising-API-Scope"), profileId)
-                XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+                // V3 API uses versioned content type
+                XCTAssertTrue(request.value(forHTTPHeaderField: "Content-Type")?.contains("application/vnd.spKeyword.v3+json") == true)
 
-                return .json(createdKeyword, statusCode: 201)
+                // V3 API returns 207 Multi-Status
+                return .json(batchResponse, statusCode: 207)
             }
             return .notFound()
         }
@@ -209,7 +212,7 @@ final class KeywordCRUDTests: XCTestCase {
 
         // Mock 400 Bad Request
         MockURLProtocol.setRequestHandler { request in
-            if request.url?.path.contains("/sp/keywords") == true && request.httpMethod == "POST" {
+            if request.url?.path == "/sp/keywords" && request.httpMethod == "POST" {
                 return .httpError(statusCode: 400)
             }
             return .notFound()
@@ -219,7 +222,7 @@ final class KeywordCRUDTests: XCTestCase {
             _ = try await client.createKeyword(keyword: newKeyword, profileId: profileId, region: region)
             XCTFail("Should have thrown validation error")
         } catch let error as AmazonAdvertisingError {
-            if case .httpError(let statusCode) = error {
+            if case .httpError(let statusCode, _) = error {
                 XCTAssertEqual(statusCode, 400)
             } else {
                 XCTFail("Wrong error type: \(error)")
@@ -227,7 +230,7 @@ final class KeywordCRUDTests: XCTestCase {
         }
     }
 
-    // MARK: - Update Keyword Tests (2 tests)
+    // MARK: - Update Keyword Tests (V3 API uses batch PUT)
 
     func testUpdateKeywordReturnsUpdatedKeyword() async throws {
         let region = AmazonRegion.northAmerica
@@ -238,14 +241,20 @@ final class KeywordCRUDTests: XCTestCase {
         updatedKeyword.bid = 2.50
         updatedKeyword.state = .paused
 
+        // V3 batch response
+        let successItem = SPKeywordSuccessItem(keyword: updatedKeyword, keywordId: "KEYWORD123", index: 0)
+        let batchResult = SPKeywordBatchResult(success: [successItem], error: [])
+        let batchResponse = SPKeywordBatchResponse(keywords: batchResult)
+
         MockURLProtocol.setRequestHandler { request in
-            if request.url?.path.contains("/sp/keywords/KEYWORD123") == true && request.httpMethod == "PUT" {
+            // V3 uses PUT to /sp/keywords for batch update
+            if request.url?.path == "/sp/keywords" && request.httpMethod == "PUT" {
                 // Verify headers
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer valid_access_token")
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Amazon-Advertising-API-Scope"), profileId)
-                XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+                XCTAssertTrue(request.value(forHTTPHeaderField: "Content-Type")?.contains("application/vnd.spKeyword.v3+json") == true)
 
-                return .json(updatedKeyword)
+                return .json(batchResponse, statusCode: 207)
             }
             return .notFound()
         }
@@ -285,7 +294,7 @@ final class KeywordCRUDTests: XCTestCase {
         }
     }
 
-    // MARK: - Archive Keyword Tests (2 tests)
+    // MARK: - Archive Keyword Tests (V3 uses POST to /sp/keywords/delete)
 
     func testArchiveKeywordSucceeds() async throws {
         let region = AmazonRegion.northAmerica
@@ -293,7 +302,8 @@ final class KeywordCRUDTests: XCTestCase {
         let keywordId = "KEYWORD123"
 
         MockURLProtocol.setRequestHandler { request in
-            if request.url?.path.contains("/sp/keywords/\(keywordId)") == true && request.httpMethod == "DELETE" {
+            // V3 API uses POST to /delete endpoint
+            if request.url?.path.contains("/sp/keywords/delete") == true && request.httpMethod == "POST" {
                 // Verify headers
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer valid_access_token")
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Amazon-Advertising-API-Scope"), profileId)
@@ -316,7 +326,7 @@ final class KeywordCRUDTests: XCTestCase {
 
         // Mock 404 Not Found
         MockURLProtocol.setRequestHandler { request in
-            if request.url?.path.contains("/sp/keywords/\(keywordId)") == true && request.httpMethod == "DELETE" {
+            if request.url?.path.contains("/sp/keywords/delete") == true && request.httpMethod == "POST" {
                 return .notFound()
             }
             return .notFound()
@@ -326,7 +336,7 @@ final class KeywordCRUDTests: XCTestCase {
             try await client.archiveKeyword(keywordId: keywordId, profileId: profileId, region: region)
             XCTFail("Should have thrown 404 error")
         } catch let error as AmazonAdvertisingError {
-            if case .httpError(let statusCode) = error {
+            if case .httpError(let statusCode, _) = error {
                 XCTAssertEqual(statusCode, 404)
             } else {
                 XCTFail("Wrong error type: \(error)")

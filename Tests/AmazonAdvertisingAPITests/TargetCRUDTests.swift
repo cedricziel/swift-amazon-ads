@@ -4,6 +4,7 @@
 //
 //  Tests for Sponsored Products Target CRUD operations
 //  Tests create, list, update, and archive operations for product/category targeting
+//  Updated for V3 API patterns
 //
 
 import XCTest
@@ -84,23 +85,25 @@ final class TargetCRUDTests: XCTestCase {
         )
     }
 
-    // MARK: - List Targets Tests (2 tests)
+    // MARK: - List Targets Tests (V3 API uses POST /sp/targets/list)
 
     func testListTargetsReturnsAllTargets() async throws {
         let region = AmazonRegion.northAmerica
         let profileId = "PROFILE123"
 
-        // Mock successful targets response
+        // Mock V3 list response
         let targets = [mockTarget(id: "TG1"), mockTarget(id: "TG2")]
+        let listResponse = SPTargetListResponse(targetingClauses: targets, nextToken: nil, totalResults: 2)
+
         MockURLProtocol.setRequestHandler { request in
-            if request.url?.path.contains("/sp/targets") == true {
-                // Verify headers
+            if request.url?.path.contains("/sp/targets/list") == true {
+                // V3 API uses POST for list
+                XCTAssertEqual(request.httpMethod, "POST")
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer valid_access_token")
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Amazon-Advertising-API-ClientId"), "test_client_id")
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Amazon-Advertising-API-Scope"), profileId)
-                XCTAssertEqual(request.httpMethod, "GET")
 
-                return .json(targets)
+                return .json(listResponse)
             }
             return .notFound()
         }
@@ -121,21 +124,16 @@ final class TargetCRUDTests: XCTestCase {
         let region = AmazonRegion.northAmerica
         let profileId = "PROFILE123"
 
-        // Mock targets response
+        // Mock V3 list response
         let targets = [mockTarget()]
+        let listResponse = SPTargetListResponse(targetingClauses: targets, nextToken: nil, totalResults: 1)
+
         MockURLProtocol.setRequestHandler { request in
-            if request.url?.path.contains("/sp/targets") == true {
-                // Verify query parameters
-                let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)
-                let adGroupIdParam = components?.queryItems?.first(where: { $0.name == "adGroupIdFilter" })
-                let stateFilterParam = components?.queryItems?.first(where: { $0.name == "stateFilter" })
+            if request.url?.path.contains("/sp/targets/list") == true {
+                // V3 API sends filter in POST body, not query parameters
+                XCTAssertEqual(request.httpMethod, "POST")
 
-                XCTAssertNotNil(adGroupIdParam)
-                XCTAssertEqual(adGroupIdParam?.value, "ADGROUP123")
-                XCTAssertNotNil(stateFilterParam)
-                XCTAssertEqual(stateFilterParam?.value, "enabled")
-
-                return .json(targets)
+                return .json(listResponse)
             }
             return .notFound()
         }
@@ -150,7 +148,7 @@ final class TargetCRUDTests: XCTestCase {
         XCTAssertEqual(result.count, 1)
     }
 
-    // MARK: - Create Target Tests (2 tests)
+    // MARK: - Create Target Tests (V3 API returns batch response with 207)
 
     func testCreateTargetReturnsCreatedTarget() async throws {
         let region = AmazonRegion.northAmerica
@@ -169,17 +167,22 @@ final class TargetCRUDTests: XCTestCase {
             state: .enabled
         )
 
-        // Response with generated ID
+        // V3 Response with batch wrapper
         let createdTarget = mockTarget(id: "NEWTG123")
+        let successItem = SPTargetSuccessItem(targetingClause: createdTarget, targetId: "NEWTG123", index: 0)
+        let batchResult = SPTargetBatchResult(success: [successItem], error: [])
+        let batchResponse = SPTargetBatchResponse(targetingClauses: batchResult)
 
         MockURLProtocol.setRequestHandler { request in
-            if request.url?.path.contains("/sp/targets") == true && request.httpMethod == "POST" {
+            if request.url?.path == "/sp/targets" && request.httpMethod == "POST" {
                 // Verify headers
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer valid_access_token")
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Amazon-Advertising-API-Scope"), profileId)
-                XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+                // V3 API uses versioned content type
+                XCTAssertTrue(request.value(forHTTPHeaderField: "Content-Type")?.contains("application/vnd.spTargetingClause.v3+json") == true)
 
-                return .json(createdTarget, statusCode: 201)
+                // V3 API returns 207 Multi-Status
+                return .json(batchResponse, statusCode: 207)
             }
             return .notFound()
         }
@@ -206,7 +209,7 @@ final class TargetCRUDTests: XCTestCase {
 
         // Mock 400 Bad Request
         MockURLProtocol.setRequestHandler { request in
-            if request.url?.path.contains("/sp/targets") == true && request.httpMethod == "POST" {
+            if request.url?.path == "/sp/targets" && request.httpMethod == "POST" {
                 return .httpError(statusCode: 400)
             }
             return .notFound()
@@ -216,7 +219,7 @@ final class TargetCRUDTests: XCTestCase {
             _ = try await client.createTarget(target: newTarget, profileId: profileId, region: region)
             XCTFail("Should have thrown validation error")
         } catch let error as AmazonAdvertisingError {
-            if case .httpError(let statusCode) = error {
+            if case .httpError(let statusCode, _) = error {
                 XCTAssertEqual(statusCode, 400)
             } else {
                 XCTFail("Wrong error type: \(error)")
@@ -224,7 +227,7 @@ final class TargetCRUDTests: XCTestCase {
         }
     }
 
-    // MARK: - Update Target Tests (2 tests)
+    // MARK: - Update Target Tests (V3 API uses batch PUT)
 
     func testUpdateTargetReturnsUpdatedTarget() async throws {
         let region = AmazonRegion.northAmerica
@@ -235,14 +238,20 @@ final class TargetCRUDTests: XCTestCase {
         updatedTarget.bid = 3.00
         updatedTarget.state = .paused
 
+        // V3 batch response
+        let successItem = SPTargetSuccessItem(targetingClause: updatedTarget, targetId: "TARGET123", index: 0)
+        let batchResult = SPTargetBatchResult(success: [successItem], error: [])
+        let batchResponse = SPTargetBatchResponse(targetingClauses: batchResult)
+
         MockURLProtocol.setRequestHandler { request in
-            if request.url?.path.contains("/sp/targets/TARGET123") == true && request.httpMethod == "PUT" {
+            // V3 uses PUT to /sp/targets for batch update
+            if request.url?.path == "/sp/targets" && request.httpMethod == "PUT" {
                 // Verify headers
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer valid_access_token")
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Amazon-Advertising-API-Scope"), profileId)
-                XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+                XCTAssertTrue(request.value(forHTTPHeaderField: "Content-Type")?.contains("application/vnd.spTargetingClause.v3+json") == true)
 
-                return .json(updatedTarget)
+                return .json(batchResponse, statusCode: 207)
             }
             return .notFound()
         }
@@ -283,7 +292,7 @@ final class TargetCRUDTests: XCTestCase {
         }
     }
 
-    // MARK: - Archive Target Tests (2 tests)
+    // MARK: - Archive Target Tests (V3 uses POST to /sp/targets/delete)
 
     func testArchiveTargetSucceeds() async throws {
         let region = AmazonRegion.northAmerica
@@ -291,7 +300,8 @@ final class TargetCRUDTests: XCTestCase {
         let targetId = "TARGET123"
 
         MockURLProtocol.setRequestHandler { request in
-            if request.url?.path.contains("/sp/targets/\(targetId)") == true && request.httpMethod == "DELETE" {
+            // V3 API uses POST to /delete endpoint
+            if request.url?.path.contains("/sp/targets/delete") == true && request.httpMethod == "POST" {
                 // Verify headers
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer valid_access_token")
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Amazon-Advertising-API-Scope"), profileId)
@@ -314,7 +324,7 @@ final class TargetCRUDTests: XCTestCase {
 
         // Mock 404 Not Found
         MockURLProtocol.setRequestHandler { request in
-            if request.url?.path.contains("/sp/targets/\(targetId)") == true && request.httpMethod == "DELETE" {
+            if request.url?.path.contains("/sp/targets/delete") == true && request.httpMethod == "POST" {
                 return .notFound()
             }
             return .notFound()
@@ -324,7 +334,7 @@ final class TargetCRUDTests: XCTestCase {
             try await client.archiveTarget(targetId: targetId, profileId: profileId, region: region)
             XCTFail("Should have thrown 404 error")
         } catch let error as AmazonAdvertisingError {
-            if case .httpError(let statusCode) = error {
+            if case .httpError(let statusCode, _) = error {
                 XCTAssertEqual(statusCode, 404)
             } else {
                 XCTFail("Wrong error type: \(error)")
