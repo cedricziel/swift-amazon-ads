@@ -57,7 +57,8 @@ extension Client {
     public static func make(
         region: AmazonRegion,
         tokenProvider: @escaping @Sendable () async throws -> String,
-        clientId: String
+        clientId: String,
+        logLevel: LogLevel = .none
     ) -> Client {
         let transport = AuthenticatedTransport(
             tokenProvider: tokenProvider,
@@ -65,9 +66,23 @@ extension Client {
             profileId: nil
         )
 
+        var middlewares: [any ClientMiddleware] = []
+
+        // Add logging middleware if enabled
+        if logLevel > .none {
+            middlewares.append(LoggingMiddleware(logLevel: logLevel))
+        }
+
+        // Add content type normalizing middleware (handles Amazon returning application/json instead of vendor types)
+        middlewares.append(ContentTypeNormalizingMiddleware())
+
+        // Add error normalizing middleware (handles Amazon returning text/plain for errors)
+        middlewares.append(ErrorNormalizingMiddleware())
+
         return Client(
             serverURL: region.advertisingAPIBaseURL,
-            transport: transport
+            transport: transport,
+            middlewares: middlewares
         )
     }
 }

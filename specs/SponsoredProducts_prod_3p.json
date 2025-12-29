@@ -16573,7 +16573,21 @@
                 "type": "object"
             }
         },
-        "securitySchemes": {}
+        "securitySchemes": {
+            "oauth2": {
+                "type": "oauth2",
+                "description": "Amazon Advertising OAuth 2.0 Authorization Code flow with PKCE",
+                "flows": {
+                    "authorizationCode": {
+                        "authorizationUrl": "https://www.amazon.com/ap/oa",
+                        "tokenUrl": "https://api.amazon.com/auth/o2/token",
+                        "scopes": {
+                            "advertising::campaign_management": "Full access to campaign management"
+                        }
+                    }
+                }
+            }
+        }
     },
     "info": {
         "description": " ",
@@ -16581,6 +16595,11 @@
         "version": "3.0"
     },
     "openapi": "3.0.1",
+    "security": [
+        {
+            "oauth2": ["advertising::campaign_management"]
+        }
+    ],
     "paths": {
         "/sp/adGroups": {
             "post": {

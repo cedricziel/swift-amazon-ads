@@ -77,7 +77,10 @@ extension Client {
             middlewares.append(LoggingMiddleware(logLevel: logLevel))
         }
 
-        // Always add error normalizing middleware
+        // Add content type normalizing middleware (handles Amazon returning application/json instead of vendor types)
+        middlewares.append(ContentTypeNormalizingMiddleware())
+
+        // Add error normalizing middleware (handles Amazon returning text/plain for errors)
         middlewares.append(ErrorNormalizingMiddleware())
 
         return Client(
@@ -117,7 +120,10 @@ extension Client {
             middlewares.append(LoggingMiddleware(logLevel: logLevel))
         }
 
-        // Always add error normalizing middleware
+        // Add content type normalizing middleware (handles Amazon returning application/json instead of vendor types)
+        middlewares.append(ContentTypeNormalizingMiddleware())
+
+        // Add error normalizing middleware (handles Amazon returning text/plain for errors)
         middlewares.append(ErrorNormalizingMiddleware())
 
         let client = Client(

@@ -9,6 +9,9 @@ import Foundation
 import HTTPTypes
 import OpenAPIRuntime
 import OpenAPIURLSession
+import os.log
+
+private let transportLogger = Logger(subsystem: "com.amazon.ads", category: "transport")
 
 /// A transport that wraps another transport and adds Amazon Advertising API authentication headers
 public struct AuthenticatedTransport: ClientTransport {
@@ -70,22 +73,35 @@ public struct AuthenticatedTransport: ClientTransport {
 
         // Get the current access token
         let token = try await tokenProvider()
+        let tokenPrefix = String(token.prefix(10))
+        transportLogger.debug("Transport: Adding Authorization header (token starts with: \(tokenPrefix)...)")
 
-        // Add authorization header
+        // Add authorization header (not in OpenAPI spec, so transport must add it)
         modifiedRequest.headerFields.append(HTTPField(name: .authorization, value: "Bearer \(token)"))
 
-        // Add client ID header
-        modifiedRequest.headerFields.append(HTTPField(
-            name: HTTPField.Name("Amazon-Advertising-API-ClientId")!,
-            value: clientId
-        ))
+        // Only add ClientId and Scope if not already present in the request
+        // (The generated client Input already sets these, so avoid duplicates)
+        let hasClientId = request.headerFields.contains { $0.name.rawName == "Amazon-Advertising-API-ClientId" }
+        let hasScope = request.headerFields.contains { $0.name.rawName == "Amazon-Advertising-API-Scope" }
 
-        // Add profile ID header if provided
-        if let profileId = profileId {
+        if !hasClientId {
+            transportLogger.debug("Transport: Adding ClientId header")
+            modifiedRequest.headerFields.append(HTTPField(
+                name: HTTPField.Name("Amazon-Advertising-API-ClientId")!,
+                value: clientId
+            ))
+        } else {
+            transportLogger.debug("Transport: ClientId already present, skipping")
+        }
+
+        if !hasScope, let profileId {
+            transportLogger.debug("Transport: Adding Scope header: \(profileId)")
             modifiedRequest.headerFields.append(HTTPField(
                 name: HTTPField.Name("Amazon-Advertising-API-Scope")!,
                 value: profileId
             ))
+        } else {
+            transportLogger.debug("Transport: Scope already present or not set, skipping")
         }
 
         return try await underlying.send(modifiedRequest, body: body, baseURL: baseURL, operationID: operationID)
@@ -167,22 +183,35 @@ public final class DynamicProfileTransport: ClientTransport, @unchecked Sendable
 
         // Get the current access token
         let token = try await tokenProvider()
+        let tokenPrefix = String(token.prefix(10))
+        transportLogger.debug("Transport: Adding Authorization header (token starts with: \(tokenPrefix)...)")
 
-        // Add authorization header
+        // Add authorization header (not in OpenAPI spec, so transport must add it)
         modifiedRequest.headerFields.append(HTTPField(name: .authorization, value: "Bearer \(token)"))
 
-        // Add client ID header
-        modifiedRequest.headerFields.append(HTTPField(
-            name: HTTPField.Name("Amazon-Advertising-API-ClientId")!,
-            value: clientId
-        ))
+        // Only add ClientId and Scope if not already present in the request
+        // (The generated client Input already sets these, so avoid duplicates)
+        let hasClientId = request.headerFields.contains { $0.name.rawName == "Amazon-Advertising-API-ClientId" }
+        let hasScope = request.headerFields.contains { $0.name.rawName == "Amazon-Advertising-API-Scope" }
 
-        // Add profile ID header if set
-        if let currentProfileId = profileId {
+        if !hasClientId {
+            transportLogger.debug("Transport: Adding ClientId header")
+            modifiedRequest.headerFields.append(HTTPField(
+                name: HTTPField.Name("Amazon-Advertising-API-ClientId")!,
+                value: clientId
+            ))
+        } else {
+            transportLogger.debug("Transport: ClientId already present, skipping")
+        }
+
+        if !hasScope, let currentProfileId = profileId {
+            transportLogger.debug("Transport: Adding Scope header: \(currentProfileId)")
             modifiedRequest.headerFields.append(HTTPField(
                 name: HTTPField.Name("Amazon-Advertising-API-Scope")!,
                 value: currentProfileId
             ))
+        } else {
+            transportLogger.debug("Transport: Scope already present or not set, skipping")
         }
 
         return try await underlying.send(modifiedRequest, body: body, baseURL: baseURL, operationID: operationID)

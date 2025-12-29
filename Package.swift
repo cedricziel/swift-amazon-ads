@@ -38,6 +38,11 @@ let package = Package(
             name: "AmazonAdsAccounts",
             targets: ["AmazonAdsAccounts"]),
 
+        // Generated: Profiles API v2
+        .library(
+            name: "AmazonAdsProfilesAPIv2",
+            targets: ["AmazonAdsProfilesAPIv2"]),
+
         // Deprecated: Original library name for backwards compatibility during migration
         .library(
             name: "AmazonAdvertisingAPI",
@@ -101,6 +106,17 @@ let package = Package(
             exclude: ["openapi.json", "openapi-generator-config.yaml", "README.md"]
         ),
 
+        // MARK: - Generated: Profiles API v2
+        // Regenerate with: make generate-profiles
+        .target(
+            name: "AmazonAdsProfilesAPIv2",
+            dependencies: [
+                "AmazonAdsCore",
+                .product(name: "OpenAPIRuntime", package: "swift-openapi-runtime"),
+            ],
+            exclude: ["openapi.yaml", "openapi-generator-config.yaml", "README.md"]
+        ),
+
         // MARK: - Tests
         .testTarget(
             name: "AmazonAdsCoreTests",
@@ -121,6 +137,10 @@ let package = Package(
         .testTarget(
             name: "AmazonAdsAccountsTests",
             dependencies: ["AmazonAdsAccounts"]
+        ),
+        .testTarget(
+            name: "AmazonAdsProfilesAPIv2Tests",
+            dependencies: ["AmazonAdsProfilesAPIv2"]
         ),
     ]
 )

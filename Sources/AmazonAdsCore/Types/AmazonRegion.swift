@@ -60,4 +60,40 @@ public enum AmazonRegion: String, CaseIterable, Codable, Identifiable, Sendable 
     public var keychainSuffix: String {
         rawValue
     }
+
+    /// Infers the Amazon region from a country code
+    /// - Parameter countryCode: ISO 3166-1 alpha-2 country code (e.g., "US", "DE", "JP")
+    /// - Returns: The appropriate Amazon region for the country, or nil if unknown
+    public static func from(countryCode: String?) -> AmazonRegion? {
+        guard let code = countryCode?.uppercased() else { return nil }
+
+        switch code {
+        // North America
+        case "US", "CA", "MX", "BR":
+            return .northAmerica
+
+        // Europe
+        case "GB", "UK", "DE", "FR", "IT", "ES", "NL", "SE", "PL", "TR", "AE", "SA", "EG", "BE", "IN":
+            return .europe
+
+        // Far East
+        case "JP", "AU", "SG":
+            return .farEast
+
+        default:
+            return nil
+        }
+    }
+
+    /// Country codes that belong to this region
+    public var countryCodes: [String] {
+        switch self {
+        case .northAmerica:
+            return ["US", "CA", "MX", "BR"]
+        case .europe:
+            return ["GB", "DE", "FR", "IT", "ES", "NL", "SE", "PL", "TR", "AE", "SA", "EG", "BE", "IN"]
+        case .farEast:
+            return ["JP", "AU", "SG"]
+        }
+    }
 }

@@ -26,6 +26,7 @@ public enum LogLevel: Int, Comparable, Sendable {
 /// A middleware that logs HTTP requests and responses for debugging
 ///
 /// Use this middleware to diagnose API issues by logging request/response details.
+/// At verbose level, request and response bodies are fully captured and logged.
 ///
 /// Example:
 /// ```swift
@@ -34,7 +35,7 @@ public enum LogLevel: Int, Comparable, Sendable {
 ///     tokenProvider: { try await getToken() },
 ///     clientId: "your-client-id",
 ///     profileId: "your-profile-id",
-///     logLevel: .debug
+///     logLevel: .verbose
 /// )
 /// ```
 public struct LoggingMiddleware: ClientMiddleware {
@@ -49,13 +50,13 @@ public struct LoggingMiddleware: ClientMiddleware {
     ///   - subsystem: The subsystem for os_log (default: "com.amazon.ads")
     ///   - category: The category for os_log (default: "api")
     ///   - redactHeaders: Headers to redact from logs (default: Authorization, Amazon-Advertising-API-ClientId)
-    ///   - maxBodyLogLength: Maximum length of request/response body to log (default: 2000)
+    ///   - maxBodyLogLength: Maximum length of request/response body to log (default: 4000)
     public init(
         logLevel: LogLevel = .info,
         subsystem: String = "com.amazon.ads",
         category: String = "api",
         redactHeaders: Set<String> = ["Authorization", "Amazon-Advertising-API-ClientId"],
-        maxBodyLogLength: Int = 2000
+        maxBodyLogLength: Int = 4000
     ) {
         self.logLevel = logLevel
         self.logger = Logger(subsystem: subsystem, category: category)
@@ -73,17 +74,51 @@ public struct LoggingMiddleware: ClientMiddleware {
         let requestID = UUID().uuidString.prefix(8)
         let startTime = Date()
 
-        // Log request
-        logRequest(request, body: body, baseURL: baseURL, operationID: operationID, requestID: String(requestID))
+        // Buffer request body if we need to log it
+        var requestBodyData: Data?
+        var bodyToSend: HTTPBody? = body
+
+        if logLevel >= .verbose, let body {
+            requestBodyData = try await bufferBody(body)
+            bodyToSend = HTTPBody(requestBodyData!)
+        }
+
+        // Log request (with body if buffered)
+        logRequest(
+            request,
+            bodyData: requestBodyData,
+            baseURL: baseURL,
+            operationID: operationID,
+            requestID: String(requestID)
+        )
 
         do {
-            let (response, responseBody) = try await next(request, body, baseURL)
+            let (response, responseBody) = try await next(request, bodyToSend, baseURL)
             let duration = Date().timeIntervalSince(startTime)
 
-            // Log response
-            logResponse(response, body: responseBody, operationID: operationID, requestID: String(requestID), duration: duration)
+            // Buffer response body if we need to log it
+            var responseBodyData: Data?
+            var bodyToReturn: HTTPBody? = responseBody
+            let statusCode = response.status.code
 
-            return (response, responseBody)
+            // Log response bodies for errors (at debug+) or always at verbose
+            let shouldLogBody = (statusCode >= 400 && logLevel >= .debug) || logLevel >= .verbose
+
+            if shouldLogBody, let responseBody {
+                responseBodyData = try await bufferBody(responseBody)
+                bodyToReturn = HTTPBody(responseBodyData!)
+            }
+
+            // Log response (with body if buffered)
+            logResponse(
+                response,
+                bodyData: responseBodyData,
+                operationID: operationID,
+                requestID: String(requestID),
+                duration: duration
+            )
+
+            return (response, bodyToReturn)
         } catch {
             let duration = Date().timeIntervalSince(startTime)
 
@@ -94,9 +129,40 @@ public struct LoggingMiddleware: ClientMiddleware {
         }
     }
 
+    // MARK: - Body Buffering
+
+    /// Buffers an HTTPBody stream into Data
+    private func bufferBody(_ body: HTTPBody) async throws -> Data {
+        var data = Data()
+        for try await chunk in body {
+            data.append(contentsOf: chunk)
+        }
+        return data
+    }
+
+    /// Formats body data for logging, with truncation if needed
+    private func formatBodyForLogging(_ data: Data) -> String {
+        guard let string = String(data: data, encoding: .utf8) else {
+            return "[binary data, \(data.count) bytes]"
+        }
+
+        if string.count <= maxBodyLogLength {
+            return string
+        }
+
+        let truncated = String(string.prefix(maxBodyLogLength))
+        return "\(truncated)... [truncated, \(string.count) total chars]"
+    }
+
     // MARK: - Private Logging Methods
 
-    private func logRequest(_ request: HTTPRequest, body: HTTPBody?, baseURL: URL, operationID: String, requestID: String) {
+    private func logRequest(
+        _ request: HTTPRequest,
+        bodyData: Data?,
+        baseURL: URL,
+        operationID: String,
+        requestID: String
+    ) {
         guard logLevel >= .info else { return }
 
         let method = request.method.rawValue
@@ -109,12 +175,19 @@ public struct LoggingMiddleware: ClientMiddleware {
             logHeaders(request.headerFields, prefix: "[\(requestID)] → Header", isRequest: true)
         }
 
-        if logLevel >= .verbose, body != nil {
-            logger.debug("[\(requestID)] → Body: [async body - not logged synchronously]")
+        if logLevel >= .verbose, let bodyData {
+            let bodyString = formatBodyForLogging(bodyData)
+            logger.debug("[\(requestID)] → Body: \(bodyString)")
         }
     }
 
-    private func logResponse(_ response: HTTPResponse, body: HTTPBody?, operationID: String, requestID: String, duration: TimeInterval) {
+    private func logResponse(
+        _ response: HTTPResponse,
+        bodyData: Data?,
+        operationID: String,
+        requestID: String,
+        duration: TimeInterval
+    ) {
         let statusCode = response.status.code
         let durationMs = String(format: "%.0f", duration * 1000)
 
@@ -126,9 +199,10 @@ public struct LoggingMiddleware: ClientMiddleware {
                 logHeaders(response.headerFields, prefix: "[\(requestID)] ← Header", isRequest: false)
             }
 
-            // Try to log error body
-            if logLevel >= .debug, let body {
-                logBody(body, prefix: "[\(requestID)] ← Body", requestID: requestID)
+            // Log error body at debug level
+            if logLevel >= .debug, let bodyData {
+                let bodyString = formatBodyForLogging(bodyData)
+                logger.error("[\(requestID)] ← Body: \(bodyString)")
             }
         } else {
             // Log success at info level
@@ -138,8 +212,9 @@ public struct LoggingMiddleware: ClientMiddleware {
                 logHeaders(response.headerFields, prefix: "[\(requestID)] ← Header", isRequest: false)
             }
 
-            if logLevel >= .verbose, let body {
-                logBody(body, prefix: "[\(requestID)] ← Body", requestID: requestID)
+            if logLevel >= .verbose, let bodyData {
+                let bodyString = formatBodyForLogging(bodyData)
+                logger.debug("[\(requestID)] ← Body: \(bodyString)")
             }
         }
     }
@@ -164,13 +239,6 @@ public struct LoggingMiddleware: ClientMiddleware {
 
             logger.debug("\(prefix): \(name): \(value)")
         }
-    }
-
-    private func logBody(_ body: HTTPBody, prefix: String, requestID: String) {
-        // Note: We can't easily log the body synchronously without consuming it
-        // This is logged as a placeholder - actual body logging would require
-        // wrapping the body stream
-        logger.debug("\(prefix): [body present - length unknown]")
     }
 }
 
