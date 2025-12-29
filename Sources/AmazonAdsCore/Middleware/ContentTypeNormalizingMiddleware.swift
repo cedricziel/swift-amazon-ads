@@ -4,9 +4,13 @@
 //
 //  Middleware that normalizes content types between Amazon API and OpenAPI client
 //
-//  Amazon's API sometimes returns generic `application/json` when the OpenAPI spec
-//  expects vendor-specific types like `application/vnd.spCampaign.v3+json`.
-//  This middleware normalizes these mismatches.
+//  Request normalization:
+//  - Strips `; charset=utf-8` from Content-Type headers as Amazon rejects charset parameters
+//
+//  Response normalization:
+//  - Amazon's API sometimes returns generic `application/json` when the OpenAPI spec
+//    expects vendor-specific types like `application/vnd.spCampaign.v3+json`.
+//  - This middleware normalizes these mismatches.
 //
 
 import Foundation
@@ -14,10 +18,13 @@ import HTTPTypes
 import OpenAPIRuntime
 import os.log
 
-/// A middleware that normalizes content type mismatches between Amazon's API responses
+/// A middleware that normalizes content type mismatches between Amazon's API
 /// and what the OpenAPI-generated client expects.
 ///
-/// Common mismatches:
+/// Request normalization:
+/// - Strips `; charset=utf-8` from Content-Type headers (Amazon rejects charset parameters)
+///
+/// Response normalization:
 /// - Amazon returns `application/json` but OpenAPI expects `application/vnd.*.v*+json`
 /// - Amazon returns `text/plain` for errors but OpenAPI expects `application/json`
 public struct ContentTypeNormalizingMiddleware: ClientMiddleware {
@@ -33,11 +40,23 @@ public struct ContentTypeNormalizingMiddleware: ClientMiddleware {
         operationID: String,
         next: @Sendable (HTTPRequest, HTTPBody?, URL) async throws -> (HTTPResponse, HTTPBody?)
     ) async throws -> (HTTPResponse, HTTPBody?) {
+        // Normalize outgoing request Content-Type by stripping charset parameter
+        // Amazon's API rejects Content-Type with charset (e.g., "application/vnd.spcampaign.v3+json; charset=utf-8")
+        var modifiedRequest = request
+        if let requestContentType = request.headerFields[.contentType],
+           requestContentType.contains("; charset=") {
+            let normalizedRequestContentType = requestContentType
+                .replacingOccurrences(of: "; charset=utf-8", with: "")
+                .replacingOccurrences(of: ";charset=utf-8", with: "")
+            modifiedRequest.headerFields[.contentType] = normalizedRequestContentType
+            logger.debug("Stripped charset from request Content-Type: '\(requestContentType)' -> '\(normalizedRequestContentType)'")
+        }
+
         // Extract the expected content type from Accept header
         let acceptHeader = request.headerFields[.accept]
         let expectedVendorType = extractPrimaryVendorType(from: acceptHeader)
 
-        let (response, responseBody) = try await next(request, body, baseURL)
+        let (response, responseBody) = try await next(modifiedRequest, body, baseURL)
 
         // Get the actual content type from response
         guard let actualContentType = response.headerFields[.contentType] else {
