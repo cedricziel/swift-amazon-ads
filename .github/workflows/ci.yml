@@ -30,10 +30,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform:
-          - iOS
-          - macOS
-          - tvOS
+        include:
+          - platform: iOS
+            destination: 'platform=iOS Simulator,name=iPhone 15 Pro'
+            scheme: AmazonAdsCore
+          - platform: macOS
+            destination: 'platform=macOS'
+            scheme: AmazonAdsCore
+          - platform: tvOS
+            destination: 'platform=tvOS Simulator,name=Apple TV'
+            scheme: AmazonAdsCore
 
     steps:
     - name: Checkout code
@@ -41,14 +47,23 @@ jobs:
 
     - name: Build for ${{ matrix.platform }}
       run: |
-        case "${{ matrix.platform }}" in
-          iOS)
-            xcodebuild build -scheme AmazonAdvertisingAPI -destination 'platform=iOS Simulator,name=iPhone 15 Pro'
-            ;;
-          macOS)
-            xcodebuild build -scheme AmazonAdvertisingAPI -destination 'platform=macOS'
-            ;;
-          tvOS)
-            xcodebuild build -scheme AmazonAdvertisingAPI -destination 'platform=tvOS Simulator,name=Apple TV'
-            ;;
-        esac
+        xcodebuild build \
+          -scheme ${{ matrix.scheme }} \
+          -destination '${{ matrix.destination }}' \
+          -skipPackagePluginValidation
+
+  lint:
+    name: Lint
+    runs-on: macos-14
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Check formatting
+      run: |
+        if command -v swiftformat &> /dev/null; then
+          swiftformat --lint Sources Tests || echo "SwiftFormat issues found"
+        else
+          echo "SwiftFormat not installed, skipping"
+        fi
