@@ -55,12 +55,14 @@ extension Client {
     ///   - tokenProvider: A closure that provides the current OAuth access token
     ///   - clientId: Your Amazon Advertising API Client ID
     ///   - profileId: The profile ID to scope requests to (required for most operations)
+    ///   - logLevel: Optional log level for request/response logging (default: none)
     /// - Returns: A configured Sponsored Products v3 client
     public static func make(
         region: AmazonRegion,
         tokenProvider: @escaping @Sendable () async throws -> String,
         clientId: String,
-        profileId: String? = nil
+        profileId: String? = nil,
+        logLevel: LogLevel = .none
     ) -> Client {
         let transport = AuthenticatedTransport(
             tokenProvider: tokenProvider,
@@ -68,10 +70,20 @@ extension Client {
             profileId: profileId
         )
 
+        var middlewares: [any ClientMiddleware] = []
+
+        // Add logging middleware if enabled
+        if logLevel > .none {
+            middlewares.append(LoggingMiddleware(logLevel: logLevel))
+        }
+
+        // Always add error normalizing middleware
+        middlewares.append(ErrorNormalizingMiddleware())
+
         return Client(
             serverURL: region.advertisingAPIBaseURL,
             transport: transport,
-            middlewares: [ErrorNormalizingMiddleware()]
+            middlewares: middlewares
         )
     }
 
@@ -83,12 +95,14 @@ extension Client {
     ///   - tokenProvider: A closure that provides the current OAuth access token
     ///   - clientId: Your Amazon Advertising API Client ID
     ///   - profileId: Optional initial profile ID
+    ///   - logLevel: Optional log level for request/response logging (default: none)
     /// - Returns: A tuple of the configured client and the transport (for changing profile)
     public static func makeWithDynamicProfile(
         region: AmazonRegion,
         tokenProvider: @escaping @Sendable () async throws -> String,
         clientId: String,
-        profileId: String? = nil
+        profileId: String? = nil,
+        logLevel: LogLevel = .none
     ) -> (client: Client, transport: DynamicProfileTransport) {
         let transport = DynamicProfileTransport(
             tokenProvider: tokenProvider,
@@ -96,10 +110,20 @@ extension Client {
             profileId: profileId
         )
 
+        var middlewares: [any ClientMiddleware] = []
+
+        // Add logging middleware if enabled
+        if logLevel > .none {
+            middlewares.append(LoggingMiddleware(logLevel: logLevel))
+        }
+
+        // Always add error normalizing middleware
+        middlewares.append(ErrorNormalizingMiddleware())
+
         let client = Client(
             serverURL: region.advertisingAPIBaseURL,
             transport: transport,
-            middlewares: [ErrorNormalizingMiddleware()]
+            middlewares: middlewares
         )
 
         return (client, transport)
