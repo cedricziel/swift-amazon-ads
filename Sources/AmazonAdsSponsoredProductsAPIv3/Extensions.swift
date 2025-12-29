@@ -70,7 +70,8 @@ extension Client {
 
         return Client(
             serverURL: region.advertisingAPIBaseURL,
-            transport: transport
+            transport: transport,
+            middlewares: [ErrorNormalizingMiddleware()]
         )
     }
 
@@ -97,7 +98,8 @@ extension Client {
 
         let client = Client(
             serverURL: region.advertisingAPIBaseURL,
-            transport: transport
+            transport: transport,
+            middlewares: [ErrorNormalizingMiddleware()]
         )
 
         return (client, transport)
