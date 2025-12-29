@@ -9,7 +9,7 @@ on:
 jobs:
   test:
     name: Build and Test
-    runs-on: macos-14
+    runs-on: macos-15
 
     steps:
     - name: Checkout code
@@ -26,19 +26,19 @@ jobs:
 
   build-platforms:
     name: Build for ${{ matrix.platform }}
-    runs-on: macos-14
+    runs-on: macos-15
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: iOS
-            destination: 'platform=iOS Simulator,name=iPhone 15 Pro'
+            destination: 'platform=iOS Simulator,name=iPhone 16 Pro'
             scheme: AmazonAdsCore
           - platform: macOS
             destination: 'platform=macOS'
             scheme: AmazonAdsCore
           - platform: tvOS
-            destination: 'platform=tvOS Simulator,name=Apple TV'
+            destination: 'platform=tvOS Simulator,name=Apple TV 4K (3rd generation)'
             scheme: AmazonAdsCore
 
     steps:
@@ -54,7 +54,7 @@ jobs:
 
   lint:
     name: Lint
-    runs-on: macos-14
+    runs-on: macos-15
 
     steps:
     - name: Checkout code
