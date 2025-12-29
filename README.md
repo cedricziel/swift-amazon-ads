@@ -1,323 +1,248 @@
-# AmazonAdvertisingAPI
+# Amazon Ads Swift SDK
 
-A modern Swift package for integrating with the Amazon Advertising API. This package provides a clean, protocol-based interface for OAuth authentication, token management, and API operations.
+A modern Swift SDK for the Amazon Advertising API, featuring OpenAPI-generated clients with full type safety and async/await support.
+
+## Packages
+
+| Package | Description |
+|---------|-------------|
+| [`AmazonAdsCore`](Sources/AmazonAdsCore/) | Shared authentication, transport, and types |
+| [`AmazonAdsSponsoredProductsAPIv3`](Sources/AmazonAdsSponsoredProductsAPIv3/) | Sponsored Products API v3 (generated) |
+| [`AmazonAdsAPIv1`](Sources/AmazonAdsAPIv1/) | Unified Amazon Ads API v1 (generated) |
+| [`AmazonAdsAccounts`](Sources/AmazonAdsAccounts/) | Accounts/Profiles API (generated) |
+| [`LegacyAmazonAdsSponsoredProductsAPIv3`](Sources/LegacyAmazonAdsSponsoredProductsAPIv3/) | Legacy handwritten SP v3 client |
 
 ## Features
 
-- ✅ **OAuth 2.0 with PKCE** - Secure authorization flow with local callback server
-- ✅ **Protocol-based Design** - Fully testable with dependency injection
-- ✅ **Token Management** - Automatic token refresh and expiry handling
-- ✅ **Customizable HTML** - Provide your own success/error pages for OAuth callbacks
-- ✅ **Storage Agnostic** - Implement your own storage (Keychain, UserDefaults, etc.)
-- ✅ **Multi-region Support** - North America, Europe, and Far East regions
+- ✅ **OpenAPI Generated** - Type-safe clients generated from official Amazon OpenAPI specs
+- ✅ **OAuth 2.0 with PKCE** - Secure authorization flow
+- ✅ **Multi-region Support** - North America, Europe, and Far East
 - ✅ **Async/Await** - Modern Swift concurrency throughout
-- ✅ **Type-safe** - Strongly typed models and enums
-- ✅ **Comprehensive Tests** - Full test coverage with mocks
+- ✅ **Automatic Auth Headers** - `AuthenticatedTransport` injects auth automatically
+- ✅ **Dynamic Profiles** - Switch profiles without recreating clients
+- ✅ **150k+ Lines Generated** - Complete API coverage
 
 ## Requirements
 
-- iOS 16.0+
-- macOS 13.0+
-- tvOS 16.0+
-- watchOS 9.0+
-- visionOS 1.0+
+- iOS 16.0+ / macOS 13.0+ / tvOS 16.0+ / watchOS 9.0+ / visionOS 1.0+
 - Swift 5.9+
 
 ## Installation
 
 ### Swift Package Manager
 
-Add the following to your `Package.swift` file:
-
 ```swift
 dependencies: [
-    .package(url: "https://github.com/cedricziel/swift-amazon-ads.git", from: "0.1.0")
+    .package(url: "https://github.com/cedricziel/swift-amazon-ads.git", from: "1.0.0")
 ]
 ```
 
-Or add it via Xcode:
-1. File > Add Package Dependencies
-2. Enter package URL: `https://github.com/cedricziel/swift-amazon-ads.git`
-3. Select version: `0.1.0` or later
+Then add the products you need:
+
+```swift
+.target(
+    name: "YourTarget",
+    dependencies: [
+        .product(name: "AmazonAdsCore", package: "swift-amazon-ads"),
+        .product(name: "AmazonAdsSponsoredProductsAPIv3", package: "swift-amazon-ads"),
+        // Add others as needed
+    ]
+)
+```
 
 ## Quick Start
 
-### 1. Implement Token Storage
-
-First, implement the `TokenStorageProtocol` to store tokens securely. Here's a Keychain example:
+### 1. Create an Authenticated Client
 
 ```swift
-import Security
-import AmazonAdvertisingAPI
+import AmazonAdsCore
+import AmazonAdsSponsoredProductsAPIv3
 
-actor KeychainTokenStorage: TokenStorageProtocol {
-    func save(_ value: String, for key: String, region: AmazonRegion) throws {
-        let storageKey = "\(region.rawValue)_\(key)"
-        let data = value.data(using: .utf8)!
-
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: storageKey,
-            kSecValueData as String: data
-        ]
-
-        // Delete existing item first
-        SecItemDelete(query as CFDictionary)
-
-        // Add new item
-        let status = SecItemAdd(query as CFDictionary, nil)
-        guard status == errSecSuccess else {
-            throw TokenStorageError.storageError("Keychain save failed")
-        }
-    }
-
-    func retrieve(for key: String, region: AmazonRegion) throws -> String {
-        let storageKey = "\(region.rawValue)_\(key)"
-
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: storageKey,
-            kSecReturnData as String: true
-        ]
-
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-
-        guard status == errSecSuccess,
-              let data = result as? Data,
-              let value = String(data: data, encoding: .utf8) else {
-            throw TokenStorageError.notFound
-        }
-
-        return value
-    }
-
-    func exists(for key: String, region: AmazonRegion) -> Bool {
-        (try? retrieve(for: key, region: region)) != nil
-    }
-
-    func delete(for key: String, region: AmazonRegion) throws {
-        let storageKey = "\(region.rawValue)_\(key)"
-
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: storageKey
-        ]
-
-        SecItemDelete(query as CFDictionary)
-    }
-
-    func deleteAll(for region: AmazonRegion) throws {
-        // Implementation to delete all keys for region
-    }
-}
-```
-
-### 2. Initialize the Client
-
-```swift
-import AmazonAdvertisingAPI
-
-let storage = KeychainTokenStorage()
-let client = AmazonAdvertisingClient(
-    clientId: "your-client-id",
-    clientSecret: "your-client-secret",
-    storage: storage
+// Create a Sponsored Products client
+let client = SponsoredProductsClient.make(
+    region: .northAmerica,
+    tokenProvider: { try await myAuthService.getAccessToken() },
+    clientId: "amzn1.application-oa2-client.xxxxx",
+    profileId: "1234567890"
 )
 ```
 
-### 3. Authenticate
+### 2. Make API Calls
 
 ```swift
-import AmazonAdvertisingAPI
+// List campaigns
+let response = try await client.listSponsoredProductsCampaigns(.init(
+    headers: .init(
+        Amazon_hyphen_Advertising_hyphen_API_hyphen_ClientId: clientId,
+        Amazon_hyphen_Advertising_hyphen_API_hyphen_Scope: profileId
+    )
+))
 
-// Initiate OAuth flow
-let authURL = try await client.initiateAuthorization(for: .northAmerica)
-
-// Open the URL in a browser (platform-specific)
-#if os(macOS)
-NSWorkspace.shared.open(authURL)
-#elseif os(iOS)
-await UIApplication.shared.open(authURL)
-#endif
-
-// The client will automatically handle the callback and exchange tokens
-// Wait for the flow to complete (OAuth server runs in background)
-```
-
-### 4. Fetch Profiles
-
-```swift
-// Check if authenticated
-if await client.isAuthenticated(for: .northAmerica) {
-    // Fetch advertising profiles
-    let profiles = try await client.fetchProfiles(for: .northAmerica)
-
-    for profile in profiles {
-        print("Profile: \(profile.accountInfo.name)")
-        print("Profile ID: \(profile.profileId)")
-    }
-
-    // Or fetch manager accounts (for Merch By Amazon)
-    let managerAccounts = try await client.fetchManagerAccounts(for: .northAmerica)
-
-    for account in managerAccounts.managerAccounts {
-        print("Manager Account: \(account.managerAccountName)")
-        for linkedAccount in account.linkedAccounts {
-            print("  Linked Profile: \(linkedAccount.profileId)")
-        }
-    }
+switch response {
+case .ok(let result):
+    // Handle success
+    print("Found campaigns")
+case .code207(let multiStatus):
+    // Handle multi-status response
+    break
+default:
+    // Handle errors
+    break
 }
 ```
 
-## Advanced Usage
-
-### Custom HTML Provider
-
-Provide your own branded success/error pages for the OAuth callback:
+### 3. Dynamic Profile Switching
 
 ```swift
-struct CustomHTMLProvider: OAuthHTMLProvider {
-    func successHTML() -> String {
-        """
-        <!DOCTYPE html>
-        <html>
-        <head><title>Success!</title></head>
-        <body>
-            <h1>Authentication successful!</h1>
-            <p>You can close this window.</p>
-        </body>
-        </html>
-        """
-    }
-
-    func errorHTML(message: String) -> String {
-        """
-        <!DOCTYPE html>
-        <html>
-        <head><title>Error</title></head>
-        <body>
-            <h1>Authentication failed</h1>
-            <p>\(message)</p>
-        </body>
-        </html>
-        """
-    }
-}
-
-let client = AmazonAdvertisingClient(
-    clientId: "your-client-id",
-    clientSecret: "your-client-secret",
-    storage: storage,
-    htmlProvider: CustomHTMLProvider()
+// Create client with dynamic profile support
+let (client, transport) = SponsoredProductsClient.makeWithDynamicProfile(
+    region: .northAmerica,
+    tokenProvider: { try await myAuthService.getAccessToken() },
+    clientId: "your-client-id"
 )
+
+// Switch profiles without recreating client
+transport.profileId = "new-profile-id"
 ```
 
-### Token Refresh
+## Package Details
 
-The client automatically refreshes tokens when they expire (within 5 minutes of expiry):
+### AmazonAdsCore
+
+Shared functionality used by all API clients:
+
+- `AmazonRegion` - API regions with endpoints
+- `AuthenticatedTransport` - Injects auth headers into requests
+- `DynamicProfileTransport` - Allows changing profile at runtime
+- `TokenStorageKey` - Standard key names for token storage
+
+### AmazonAdsSponsoredProductsAPIv3
+
+Generated client for Sponsored Products API v3:
 
 ```swift
-// Get access token (automatically refreshes if needed)
-let accessToken = try await client.getAccessToken(for: .northAmerica)
+import AmazonAdsSponsoredProductsAPIv3
 
-// Or manually refresh
-try await client.refreshToken(for: .northAmerica)
+// Type aliases for convenience
+let client: SponsoredProductsClient = ...
+let campaign: SPCampaign = ...
+let adGroup: SPAdGroup = ...
 ```
 
-### Logout
+### AmazonAdsAPIv1
+
+Generated client for the unified Amazon Ads API:
 
 ```swift
-// Clear all tokens for a region
-try await client.logout(for: .northAmerica)
+import AmazonAdsAPIv1
+
+let client: AmazonAdsClient = ...
+let campaign: Campaign = ...
 ```
 
-### Verify Connection
+### AmazonAdsAccounts
+
+Generated client for Accounts/Profiles API:
 
 ```swift
-// Test if API credentials are valid and account has access
-let isValid = try await client.verifyConnection(for: .northAmerica)
+import AmazonAdsAccounts
+
+let client: AccountsClient = ...
+let account: AdsAccount = ...
+```
+
+## Development
+
+### Building
+
+```bash
+make build
+```
+
+### Testing
+
+```bash
+make test
+```
+
+### Regenerating OpenAPI Clients
+
+When Amazon updates their OpenAPI specs:
+
+```bash
+# Update specs from specs/ directory
+make update-specs
+
+# Regenerate all clients
+make generate
+
+# Or regenerate individually
+make generate-sp      # Sponsored Products v3
+make generate-api     # Unified API v1
+make generate-accounts # Accounts API
+```
+
+### Project Structure
+
+```
+swift-amazon-ads/
+├── Sources/
+│   ├── AmazonAdsCore/                          # Shared auth & types
+│   │   ├── Auth/
+│   │   ├── Transport/
+│   │   └── Types/
+│   ├── AmazonAdsSponsoredProductsAPIv3/        # Generated SP v3
+│   │   ├── GeneratedSources/
+│   │   ├── Extensions.swift
+│   │   └── openapi.json
+│   ├── AmazonAdsAPIv1/                         # Generated unified API
+│   ├── AmazonAdsAccounts/                      # Generated accounts API
+│   └── LegacyAmazonAdsSponsoredProductsAPIv3/  # Handwritten legacy
+├── Tests/
+├── specs/                                       # OpenAPI source specs
+└── Makefile
 ```
 
 ## API Coverage
 
-### Currently Implemented
+### Sponsored Products v3 (AmazonAdsSponsoredProductsAPIv3)
 
-- ✅ OAuth 2.0 authorization with PKCE
-- ✅ Token refresh
-- ✅ Profile listing (`/v2/profiles`)
-- ✅ Manager account listing (`/managerAccounts`)
-- ✅ Connection verification
+- Campaigns (CRUD, list, archive)
+- Ad Groups (CRUD, list)
+- Keywords (CRUD, list)
+- Product Ads (CRUD, list)
+- Targets (CRUD, list)
+- Negative Keywords & Targets
+- Budget Recommendations
+- Bid Recommendations
 
-### Planned for Future Releases
+### Unified API v1 (AmazonAdsAPIv1)
 
-- ⏳ Campaign management
-- ⏳ Ad group operations
-- ⏳ Keyword and targeting management
-- ⏳ Reporting and analytics
-- ⏳ Budget and bid management
+- Cross-product campaign management
+- Ad associations
+- Budget rules
+- Moderation
 
-## Architecture
+### Accounts (AmazonAdsAccounts)
 
-### Protocol-Based Design
-
-All major components are protocol-based for maximum testability:
-
-- `AmazonAdvertisingClientProtocol` - Main client interface
-- `TokenStorageProtocol` - Storage abstraction
-- `OAuthHTMLProvider` - HTML customization
-
-### Models
-
-- `AmazonRegion` - API regions (NA, EU, FE)
-- `AmazonProfile` - Advertising profile
-- `AmazonManagerAccount` - Manager account (Merch By Amazon)
-- `AmazonTokenResponse` - OAuth token response
-- `AmazonAdvertisingError` - Error types
-
-## Testing
-
-The package includes comprehensive tests with mock implementations:
-
-```swift
-import Testing
-@testable import AmazonAdvertisingAPI
-
-@Test func testTokenStorage() async throws {
-    let storage = InMemoryTokenStorage()
-    try await storage.save("token", for: "key", region: .northAmerica)
-    let retrieved = try await storage.retrieve(for: "key", region: .northAmerica)
-    #expect(retrieved == "token")
-}
-```
-
-Run tests:
-
-```bash
-swift test
-```
+- List advertising accounts
+- Account metadata
 
 ## Getting Amazon API Credentials
 
-1. Register for Amazon Advertising API access at [advertising.amazon.com](https://advertising.amazon.com)
-2. Complete the API onboarding process
-3. Create an API application to get your client ID and secret
-4. Add `http://localhost:8765/callback` as an allowed redirect URI
+1. Register at [advertising.amazon.com](https://advertising.amazon.com)
+2. Complete API onboarding
+3. Create an API application
+4. Add `http://localhost:8765/callback` as redirect URI
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions welcome! Please submit a Pull Request.
 
 ## License
 
-This project is licensed under the Apache License 2.0 - see the LICENSE file for details.
+Apache License 2.0 - see LICENSE file.
 
 ## Author
 
 Cedric Ziel ([@cedricziel](https://github.com/cedricziel))
-
-## Acknowledgments
-
-- Inspired by the needs of [PodDreamer](https://github.com/cedricziel/PodDreamer)
-- Built with modern Swift concurrency patterns
-- Follows Apple platform best practices

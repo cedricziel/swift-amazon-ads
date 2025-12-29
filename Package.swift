@@ -4,7 +4,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "AmazonAdvertisingAPI",
+    name: "AmazonAds",
     platforms: [
         .iOS(.v16),
         .macOS(.v13),
@@ -13,22 +13,112 @@ let package = Package(
         .visionOS(.v1)
     ],
     products: [
-        // Products define the executables and libraries a package produces, making them visible to other packages.
+        // Core shared functionality (auth, transport, types)
+        .library(
+            name: "AmazonAdsCore",
+            targets: ["AmazonAdsCore"]),
+
+        // Generated: New unified API v1
+        .library(
+            name: "AmazonAdsAPIv1",
+            targets: ["AmazonAdsAPIv1"]),
+
+        // Generated: Sponsored Products v3 from OpenAPI spec
+        .library(
+            name: "AmazonAdsSponsoredProductsAPIv3",
+            targets: ["AmazonAdsSponsoredProductsAPIv3"]),
+
+        // Legacy: Existing handwritten Sponsored Products v3 code
+        .library(
+            name: "LegacyAmazonAdsSponsoredProductsAPIv3",
+            targets: ["LegacyAmazonAdsSponsoredProductsAPIv3"]),
+
+        // Generated: Accounts API
+        .library(
+            name: "AmazonAdsAccounts",
+            targets: ["AmazonAdsAccounts"]),
+
+        // Deprecated: Original library name for backwards compatibility during migration
         .library(
             name: "AmazonAdvertisingAPI",
-            targets: ["AmazonAdvertisingAPI"]),
+            targets: ["LegacyAmazonAdsSponsoredProductsAPIv3"]),
     ],
     dependencies: [
-        // Dependencies declare other packages that this package depends on.
+        .package(url: "https://github.com/apple/swift-openapi-generator", from: "1.0.0"),
+        .package(url: "https://github.com/apple/swift-openapi-runtime", from: "1.0.0"),
+        .package(url: "https://github.com/apple/swift-openapi-urlsession", from: "1.0.0"),
     ],
     targets: [
-        // Targets are the basic building blocks of a package, defining a module or a test suite.
-        // Targets can depend on other targets in this package and products from dependencies.
+        // MARK: - Core (shared auth, transport, types)
         .target(
-            name: "AmazonAdvertisingAPI",
-            dependencies: []),
+            name: "AmazonAdsCore",
+            dependencies: [
+                .product(name: "OpenAPIRuntime", package: "swift-openapi-runtime"),
+                .product(name: "OpenAPIURLSession", package: "swift-openapi-urlsession"),
+            ],
+            exclude: ["README.md"]
+        ),
+
+        // MARK: - Generated: New unified API v1
+        // Regenerate with: make generate-api
+        .target(
+            name: "AmazonAdsAPIv1",
+            dependencies: [
+                "AmazonAdsCore",
+                .product(name: "OpenAPIRuntime", package: "swift-openapi-runtime"),
+            ],
+            exclude: ["openapi.json", "openapi-generator-config.yaml", "README.md"]
+        ),
+
+        // MARK: - Generated: Sponsored Products v3 from OpenAPI spec
+        // Regenerate with: make generate-sp
+        .target(
+            name: "AmazonAdsSponsoredProductsAPIv3",
+            dependencies: [
+                "AmazonAdsCore",
+                .product(name: "OpenAPIRuntime", package: "swift-openapi-runtime"),
+            ],
+            exclude: ["openapi.json", "openapi-generator-config.yaml", "README.md"]
+        ),
+
+        // MARK: - Legacy: Existing handwritten Sponsored Products v3 code
+        .target(
+            name: "LegacyAmazonAdsSponsoredProductsAPIv3",
+            dependencies: ["AmazonAdsCore"],
+            exclude: ["README.md"]
+        ),
+
+        // MARK: - Generated: Accounts API
+        // Regenerate with: make generate-accounts
+        .target(
+            name: "AmazonAdsAccounts",
+            dependencies: [
+                "AmazonAdsCore",
+                .product(name: "OpenAPIRuntime", package: "swift-openapi-runtime"),
+            ],
+            exclude: ["openapi.json", "openapi-generator-config.yaml", "README.md"]
+        ),
+
+        // MARK: - Tests
         .testTarget(
-            name: "AmazonAdvertisingAPITests",
-            dependencies: ["AmazonAdvertisingAPI"]),
+            name: "AmazonAdsCoreTests",
+            dependencies: ["AmazonAdsCore"]
+        ),
+        .testTarget(
+            name: "AmazonAdsAPIv1Tests",
+            dependencies: ["AmazonAdsAPIv1"]
+        ),
+        .testTarget(
+            name: "AmazonAdsSponsoredProductsAPIv3Tests",
+            dependencies: ["AmazonAdsSponsoredProductsAPIv3"]
+        ),
+        .testTarget(
+            name: "LegacyAmazonAdsSponsoredProductsAPIv3Tests",
+            dependencies: ["LegacyAmazonAdsSponsoredProductsAPIv3"]
+        ),
+        .testTarget(
+            name: "AmazonAdsAccountsTests",
+            dependencies: ["AmazonAdsAccounts"]
+        ),
     ]
 )
