@@ -43,6 +43,11 @@ let package = Package(
             name: "AmazonAdsProfilesAPIv2",
             targets: ["AmazonAdsProfilesAPIv2"]),
 
+        // Generated: Reporting API v3 (async reports)
+        .library(
+            name: "AmazonAdsReportingAPIv3",
+            targets: ["AmazonAdsReportingAPIv3"]),
+
         // Deprecated: Original library name for backwards compatibility during migration
         .library(
             name: "AmazonAdvertisingAPI",
@@ -121,6 +126,17 @@ let package = Package(
             exclude: ["openapi.yaml", "openapi-generator-config.yaml", "README.md"]
         ),
 
+        // MARK: - Generated: Reporting API v3 (async reports)
+        // Regenerate with: make generate-reporting
+        .target(
+            name: "AmazonAdsReportingAPIv3",
+            dependencies: [
+                "AmazonAdsCore",
+                .product(name: "OpenAPIRuntime", package: "swift-openapi-runtime"),
+            ],
+            exclude: ["openapi.json", "openapi-generator-config.yaml", "README.md"]
+        ),
+
         // MARK: - Tests
         .testTarget(
             name: "AmazonAdsCoreTests",
@@ -145,6 +161,10 @@ let package = Package(
         .testTarget(
             name: "AmazonAdsProfilesAPIv2Tests",
             dependencies: ["AmazonAdsProfilesAPIv2"]
+        ),
+        .testTarget(
+            name: "AmazonAdsReportingAPIv3Tests",
+            dependencies: ["AmazonAdsReportingAPIv3"]
         ),
     ]
 )

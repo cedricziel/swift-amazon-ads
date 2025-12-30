@@ -1,4 +1,4 @@
-.PHONY: all build test clean generate generate-sp generate-api generate-accounts generate-profiles lint format
+.PHONY: all build test clean generate generate-sp generate-api generate-accounts generate-profiles generate-reporting lint format
 
 # Default target
 all: build
@@ -17,7 +17,7 @@ clean:
 	rm -rf .build
 
 # Generate all OpenAPI clients
-generate: generate-sp generate-api generate-accounts generate-profiles
+generate: generate-sp generate-api generate-accounts generate-profiles generate-reporting
 	@echo "✅ All OpenAPI clients regenerated"
 
 # Generate Sponsored Products v3 client
@@ -52,6 +52,14 @@ generate-profiles:
 		--config Sources/AmazonAdsProfilesAPIv2/openapi-generator-config.yaml \
 		--output-directory Sources/AmazonAdsProfilesAPIv2/GeneratedSources
 
+# Generate Reporting API v3 client (async reports)
+generate-reporting:
+	@echo "🔄 Generating AmazonAdsReportingAPIv3..."
+	swift run swift-openapi-generator generate \
+		Sources/AmazonAdsReportingAPIv3/openapi.json \
+		--config Sources/AmazonAdsReportingAPIv3/openapi-generator-config.yaml \
+		--output-directory Sources/AmazonAdsReportingAPIv3/GeneratedSources
+
 # Lint with SwiftLint (if available)
 lint:
 	@which swiftlint > /dev/null && swiftlint lint --strict || echo "SwiftLint not installed"
@@ -67,6 +75,7 @@ update-specs:
 	cp specs/AmazonAdsAPIALLMerged_prod_3p.json Sources/AmazonAdsAPIv1/openapi.json
 	cp specs/AdvertisingAccounts_prod_3p.json Sources/AmazonAdsAccounts/openapi.json
 	cp specs/Profiles_prod_3p.yaml Sources/AmazonAdsProfilesAPIv2/openapi.yaml
+	cp specs/OfflineReport_prod_3p.json Sources/AmazonAdsReportingAPIv3/openapi.json
 	@echo "✅ Specs updated. Run 'make generate' to regenerate clients."
 
 # Full regeneration: update specs and generate
