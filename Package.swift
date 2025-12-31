@@ -70,7 +70,8 @@ let package = Package(
                 .product(name: "OpenAPIURLSession", package: "swift-openapi-urlsession"),
                 .product(name: "HTTPTypes", package: "swift-http-types"),
                 // Explicit transitive deps for Xcode 16 module scanning
-                .product(name: "DequeModule", package: "swift-collections"),
+                // Use Collections umbrella to include all internal utilities
+                .product(name: "Collections", package: "swift-collections"),
             ],
             exclude: ["README.md"]
         ),
