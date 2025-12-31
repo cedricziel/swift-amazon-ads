@@ -112,8 +112,9 @@ public struct ContentTypeNormalizingMiddleware: ClientMiddleware {
     ) -> String? {
         let actualLower = actual.lowercased()
 
-        // Case 1: Response is application/json but we expected a vendor type (success responses)
-        if actualLower.hasPrefix("application/json"), let expected, expected.contains("vnd.") {
+        // Case 1: Response is application/json but we expected a vendor type (SUCCESS responses only)
+        // Error responses (4xx/5xx) should remain application/json for proper error decoding
+        if actualLower.hasPrefix("application/json"), let expected, expected.contains("vnd."), statusCode < 400 {
             // Amazon returned generic JSON when we expected vendor-specific JSON
             // Return the expected vendor type so OpenAPI client can parse it
             return expected
