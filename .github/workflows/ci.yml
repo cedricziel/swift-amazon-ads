@@ -9,7 +9,9 @@ on:
 jobs:
   test:
     name: Build and Test
-    runs-on: macos-15
+    # macos-26 ships Xcode 26 / Swift 6.3 — required by Package.swift's
+    # swift-tools-version. macos-15 only has Swift 6.1.
+    runs-on: macos-26
 
     steps:
     - name: Checkout code
@@ -26,19 +28,19 @@ jobs:
 
   build-platforms:
     name: Build for ${{ matrix.platform }}
-    runs-on: macos-15
+    runs-on: macos-26
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: iOS
-            destination: 'platform=iOS Simulator,name=iPhone 16 Pro'
+            destination: 'platform=iOS Simulator,name=iPhone 17 Pro,OS=latest'
             scheme: AmazonAdsCore
           - platform: macOS
             destination: 'platform=macOS'
             scheme: AmazonAdsCore
           - platform: tvOS
-            destination: 'platform=tvOS Simulator,name=Apple TV 4K (3rd generation)'
+            destination: 'platform=tvOS Simulator,name=Apple TV 4K (3rd generation),OS=latest'
             scheme: AmazonAdsCore
 
     steps:
@@ -54,7 +56,7 @@ jobs:
 
   lint:
     name: Lint
-    runs-on: macos-15
+    runs-on: macos-26
 
     steps:
     - name: Checkout code
