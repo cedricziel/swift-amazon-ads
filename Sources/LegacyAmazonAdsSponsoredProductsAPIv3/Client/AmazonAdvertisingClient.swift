@@ -427,7 +427,7 @@ public actor AmazonAdvertisingClient: AmazonAdvertisingClientProtocol {
 
     // MARK: - Timeout Helper
 
-    private func withTimeout<T>(seconds: TimeInterval, operation: @escaping () async throws -> T) async throws -> T {
+    private func withTimeout<T: Sendable>(seconds: TimeInterval, operation: @escaping @Sendable () async throws -> T) async throws -> T {
         try await withThrowingTaskGroup(of: T.self) { group in
             // Add the actual operation
             group.addTask {
