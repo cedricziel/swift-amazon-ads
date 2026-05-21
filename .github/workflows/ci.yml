@@ -64,6 +64,13 @@ jobs:
       with:
         xcode-version: latest
 
+    # Xcode 26.5 beta ships without pre-installed iOS/tvOS 26.5 simulator
+    # runtimes on macos-26 (image bundles 26.1/26.2/26.4). Download the
+    # matching platform before the build. macOS doesn't need this.
+    - name: Download platform runtime
+      if: matrix.platform != 'macOS'
+      run: sudo xcodebuild -downloadPlatform ${{ matrix.platform }}
+
     - name: Build for ${{ matrix.platform }}
       run: |
         xcodebuild build \
